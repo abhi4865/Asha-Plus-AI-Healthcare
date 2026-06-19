@@ -234,6 +234,7 @@ const PATIENT_NAV = [
   { key: "profile",  icon: "👤", label: "My Profile" },
   { key: "records",  icon: "📋", label: "Health Records" },
   { key: "chatbot",  icon: "🤖", label: "AI Health Guide" },
+  { key: "schemes",  icon: "🏛️", label: "Govt Scheme Suggestions" },
 ];
 
 function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse }) {
@@ -979,6 +980,74 @@ function HealthRecords() {
   );
 }
 
+// ─── Govt Scheme Suggestions ───────────────────────────────────────────────────
+const GOVT_SCHEMES = [
+  {
+    icon: "🏥", name: "Ayushman Bharat (PM-JAY)",
+    desc: "Free hospitalisation cover up to ₹5 lakh per family per year at empanelled hospitals.",
+    eligibility: "Families listed under SECC database / state extension criteria",
+  },
+  {
+    icon: "🤰", name: "Janani Suraksha Yojana (JSY)",
+    desc: "Cash assistance for institutional delivery to reduce maternal and infant mortality.",
+    eligibility: "Pregnant women, especially BPL households in low-performing states",
+  },
+  {
+    icon: "🍼", name: "Janani Shishu Suraksha Karyakram (JSSK)",
+    desc: "Free delivery, C-section and newborn care, including drugs, diet and transport.",
+    eligibility: "All pregnant women delivering in public health institutions",
+  },
+  {
+    icon: "👶", name: "Pradhan Mantri Matru Vandana Yojana (PMMVY)",
+    desc: "₹5,000 cash incentive for the first living child to support nutrition and rest.",
+    eligibility: "Pregnant and lactating mothers, first child only",
+  },
+  {
+    icon: "🧒", name: "Rashtriya Bal Swasthya Karyakram (RBSK)",
+    desc: "Free child health screening and early intervention for birth defects and deficiencies.",
+    eligibility: "Children aged 0–18 years in the community",
+  },
+  {
+    icon: "💉", name: "Mission Indradhanush",
+    desc: "Free immunisation drive covering vaccine-preventable childhood diseases.",
+    eligibility: "Unvaccinated or partially vaccinated children and pregnant women",
+  },
+];
+
+function GovtSchemes() {
+  return (
+    <div className="page-body">
+      <div className="card card-ai mb-4">
+        <div className="card-header">
+          <div className="card-title">🏛️ Govt Scheme Suggestions</div>
+          <span className="badge badge-gold">{GOVT_SCHEMES.length} Schemes</span>
+        </div>
+        <div className="card-body" style={{ color: "var(--text-muted)", fontSize: 13, padding: "16px 24px" }}>
+          National health schemes your patients may be eligible for — share these during home visits.
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        {GOVT_SCHEMES.map((s) => (
+          <div key={s.name} className="stat-card">
+            <div style={{ fontSize: 26 }}>{s.icon}</div>
+            <div style={{ fontWeight: 700, color: "var(--text-dark)", fontSize: 14, lineHeight: 1.3 }}>
+              {s.name}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 }}>{s.desc}</div>
+            <div style={{ fontSize: 11, color: "var(--purple-primary)", fontWeight: 600 }}>
+              Eligibility: {s.eligibility}
+            </div>
+            <button className="btn btn-outline-purple btn-sm" style={{ marginTop: 4, alignSelf: "flex-start" }}>
+              Check Eligibility
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page Title Map ───────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -987,6 +1056,7 @@ const PAGE_TITLES = {
   chatbot:   "AI Assistant",
   profile:   "My Profile",
   records:   "Health Records",
+  schemes:   "Govt Scheme Suggestions",
 };
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
@@ -1019,6 +1089,7 @@ export default function App() {
       if (page === "profile")  return <PatientDashboard user={user} />;
       if (page === "records")  return <HealthRecords />;
       if (page === "chatbot")  return <ChatBot />;
+      if (page === "schemes")  return <GovtSchemes />;
     }
     return null;
   };
