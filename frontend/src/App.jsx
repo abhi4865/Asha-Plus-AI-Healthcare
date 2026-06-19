@@ -69,6 +69,107 @@ function useToast() {
   return { toasts, add, dismiss };
 }
 
+// ─── ASHA Worker SVG Illustration ────────────────────────────────────────────
+function AshaIllustration() {
+  return (
+    <svg viewBox="0 0 340 380" xmlns="http://www.w3.org/2000/svg" style={{ width: "100%", maxWidth: 320 }}>
+      {/* Background arch */}
+      <path d="M60 380 Q60 160 170 80 Q280 160 280 380Z" fill="rgba(245,158,11,0.25)" />
+      {/* Ground */}
+      <ellipse cx="170" cy="370" rx="130" ry="18" fill="rgba(0,0,0,0.1)" />
+
+      {/* House background */}
+      <rect x="30" y="110" width="100" height="240" rx="4" fill="#C084FC" opacity="0.4" />
+      <polygon points="15,115 130,60 245,115" fill="#9333EA" opacity="0.5" />
+      {/* Door */}
+      <rect x="65" y="270" width="30" height="80" rx="3" fill="#7C3AED" opacity="0.6" />
+      {/* Window */}
+      <rect x="42" y="170" width="36" height="32" rx="3" fill="rgba(255,255,255,0.5)" />
+      <line x1="60" y1="170" x2="60" y2="202" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" />
+      <line x1="42" y1="186" x2="78" y2="186" stroke="rgba(255,255,255,0.7)" strokeWidth="1.5" />
+
+      {/* ASHA Worker 1 - center (sari, blue badge) */}
+      {/* Body */}
+      <ellipse cx="170" cy="210" rx="22" ry="30" fill="#F3E8FF" />
+      {/* Sari drape */}
+      <path d="M148 195 Q155 240 165 340 Q170 345 175 340 Q185 240 192 195Z" fill="#7C3AED" opacity="0.8" />
+      {/* Blue sash/badge */}
+      <rect x="155" y="200" width="30" height="8" rx="3" fill="#3B82F6" />
+      <text x="170" y="207" textAnchor="middle" fontSize="5" fill="white" fontWeight="bold">ASHA</text>
+      {/* Head */}
+      <circle cx="170" cy="172" r="20" fill="#D97706" />
+      {/* Hair bun */}
+      <ellipse cx="170" cy="155" rx="14" ry="10" fill="#1F2937" />
+      <circle cx="178" cy="151" r="5" fill="#1F2937" />
+      {/* Face */}
+      <circle cx="164" cy="174" r="2.5" fill="#92400E" />
+      <circle cx="176" cy="174" r="2.5" fill="#92400E" />
+      <path d="M164 182 Q170 187 176 182" stroke="#92400E" strokeWidth="1.5" fill="none" />
+      {/* Bindi */}
+      <circle cx="170" cy="166" r="2" fill="#EF4444" />
+      {/* Arms */}
+      <path d="M148 205 Q130 220 125 235" stroke="#D97706" strokeWidth="8" strokeLinecap="round" fill="none" />
+      <path d="M192 205 Q210 215 215 228" stroke="#D97706" strokeWidth="8" strokeLinecap="round" fill="none" />
+      {/* Clipboard */}
+      <rect x="207" y="220" width="22" height="28" rx="2" fill="#FEF3C7" stroke="#F59E0B" strokeWidth="1.5" />
+      <line x1="211" y1="227" x2="225" y2="227" stroke="#9CA3AF" strokeWidth="1.5" />
+      <line x1="211" y1="232" x2="225" y2="232" stroke="#9CA3AF" strokeWidth="1.5" />
+      <line x1="211" y1="237" x2="220" y2="237" stroke="#9CA3AF" strokeWidth="1.5" />
+
+      {/* ASHA Worker 2 - right side */}
+      <path d="M215 210 Q225 255 222 340 Q227 345 232 340 Q237 255 248 210Z" fill="#6D28D9" opacity="0.7" />
+      <ellipse cx="232" cy="208" rx="18" ry="26" fill="#FDE68A" opacity="0.8" />
+      <circle cx="232" cy="178" r="17" fill="#B45309" />
+      <ellipse cx="232" cy="163" rx="12" ry="9" fill="#1F2937" />
+      <circle cx="227" cy="180" r="2" fill="#78350F" />
+      <circle cx="237" cy="180" r="2" fill="#78350F" />
+      <path d="M227 188 Q232 192 237 188" stroke="#78350F" strokeWidth="1.5" fill="none" />
+      <circle cx="232" cy="172" r="1.5" fill="#EF4444" />
+
+      {/* Family - left side */}
+      {/* Mother with baby */}
+      <path d="M98 220 Q108 260 105 340 Q110 344 115 340 Q118 260 128 220Z" fill="#A855F7" opacity="0.5" />
+      <ellipse cx="112" cy="218" rx="15" ry="22" fill="#FEE2E2" opacity="0.9" />
+      <circle cx="112" cy="196" r="15" fill="#92400E" />
+      <ellipse cx="112" cy="184" rx="10" ry="7" fill="#1F2937" />
+      <circle cx="107" cy="198" r="2" fill="#78350F" />
+      <circle cx="117" cy="198" r="2" fill="#78350F" />
+      {/* Baby */}
+      <circle cx="97" cy="205" r="9" fill="#FDE68A" />
+      <ellipse cx="97" cy="197" rx="6" ry="5" fill="#1F2937" />
+      <path d="M92 210 Q93 220 95 230 Q97 232 99 230 Q101 220 102 210Z" fill="#F472B6" opacity="0.7" />
+
+      {/* Little girl */}
+      <path d="M128 285 Q133 315 132 355 Q135 358 138 355 Q143 315 148 285Z" fill="#EF4444" opacity="0.6" />
+      <ellipse cx="138" cy="283" rx="12" ry="18" fill="#FCA5A5" opacity="0.8" />
+      <circle cx="138" cy="265" r="13" fill="#B45309" />
+      <ellipse cx="138" cy="255" rx="9" ry="6" fill="#1F2937" />
+      <circle cx="133" cy="266" r="1.8" fill="#78350F" />
+      <circle cx="143" cy="266" r="1.8" fill="#78350F" />
+      <path d="M133 273 Q138 276 143 273" stroke="#78350F" strokeWidth="1.2" fill="none" />
+      {/* Girl hand near mouth */}
+      <circle cx="128" cy="272" r="4" fill="#D97706" />
+
+      {/* Elderly woman */}
+      <path d="M245 230 Q252 268 250 340 Q254 343 258 340 Q262 268 270 230Z" fill="#DDD6FE" opacity="0.6" />
+      <ellipse cx="258" cy="228" rx="15" ry="21" fill="#E9D5FF" opacity="0.9" />
+      <circle cx="258" cy="208" r="14" fill="#9CA3AF" />
+      <ellipse cx="258" cy="197" rx="10" ry="8" fill="#6B7280" />
+      <circle cx="253" cy="210" r="1.8" fill="#4B5563" />
+      <circle cx="263" cy="210" r="1.8" fill="#4B5563" />
+      {/* Glasses */}
+      <circle cx="253" cy="208" r="4" fill="none" stroke="#374151" strokeWidth="1.2" />
+      <circle cx="263" cy="208" r="4" fill="none" stroke="#374151" strokeWidth="1.2" />
+      <line x1="257" y1="208" x2="259" y2="208" stroke="#374151" strokeWidth="1.2" />
+
+      {/* Ground grass */}
+      <ellipse cx="170" cy="358" rx="145" ry="12" fill="#86EFAC" opacity="0.3" />
+      <path d="M50 355 Q55 340 60 355 Q65 340 70 355" stroke="#86EFAC" strokeWidth="2" fill="none" opacity="0.5" />
+      <path d="M250 352 Q255 337 260 352 Q265 337 270 352" stroke="#86EFAC" strokeWidth="2" fill="none" opacity="0.5" />
+    </svg>
+  );
+}
+
 // ─── Auth Page ────────────────────────────────────────────────────────────────
 function AuthPage({ onLogin }) {
   const [role, setRole]       = useState("admin");
@@ -77,6 +178,7 @@ function AuthPage({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [showPass, setShowP]  = useState(false);
+  const [showCreds, setShowCreds] = useState(false);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -94,107 +196,119 @@ function AuthPage({ onLogin }) {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        {/* Logo */}
-        <div className="auth-logo">
-          <div className="auth-logo-title">
-            Asha<span>+</span> Care
+    <div className="login-page">
+      {/* ── Left Panel – Illustration ── */}
+      <div className="login-left">
+        <div className="login-illustration-card">
+          <AshaIllustration />
+        </div>
+        <div className="login-left-tagline">
+          <span>Empowering</span> ASHA Workers &amp; Communities
+        </div>
+      </div>
+
+      {/* ── Right Panel – Form ── */}
+      <div className="login-right">
+        <div className="login-form-panel">
+          {/* Brand */}
+          <div className="login-brand">
+            <div className="login-brand-title">Asha<span>+</span></div>
           </div>
-          <div className="auth-logo-sub">AI-Powered Healthcare Platform</div>
-        </div>
 
-        {/* Role Toggle */}
-        <div className="auth-role-toggle">
-          <button
-            className={`auth-role-btn ${role === "admin" ? "active" : ""}`}
-            onClick={() => { setRole("admin"); setError(""); }}
-          >
-            🏥 ASHA Worker
-          </button>
-          <button
-            className={`auth-role-btn ${role === "patient" ? "active" : ""}`}
-            onClick={() => { setRole("patient"); setError(""); }}
-          >
-            🧑‍⚕️ Patient
-          </button>
-        </div>
+          <div className="login-subtitle">Login with your email and password</div>
 
-        <div className="auth-heading">Welcome Back</div>
-        <div className="auth-sub">
-          {role === "admin"
-            ? "Sign in to manage patients and health records"
-            : "Sign in to view your health profile"}
-        </div>
+          <form onSubmit={handleLogin} style={{ width: "100%" }}>
+            {/* Role dropdown */}
+            <div className="login-field">
+              <select
+                className="login-select"
+                value={role}
+                onChange={(e) => { setRole(e.target.value); setError(""); }}
+              >
+                <option value="admin">Login as ASHA Worker</option>
+                <option value="patient">Login as Patient</option>
+              </select>
+              <span className="login-select-arrow">▾</span>
+            </div>
 
-        <form onSubmit={handleLogin}>
-          <div className="form-group mb-4">
-            <label className="form-label">Email Address</label>
-            <div className="input-wrapper">
-              <span className="input-icon">📧</span>
+            {/* Email */}
+            <div className="login-field">
               <input
-                className="form-input has-icon"
+                className="login-input"
                 type="email"
-                placeholder={role === "admin" ? "admin@ashacare.in" : "patient@email.com"}
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
-          </div>
 
-          <div className="form-group mb-4">
-            <label className="form-label">Password</label>
-            <div className="input-wrapper">
-              <span className="input-icon">🔒</span>
+            {/* Password */}
+            <div className="login-field" style={{ position: "relative" }}>
               <input
-                className="form-input has-icon has-action"
+                className="login-input"
                 type={showPass ? "text" : "password"}
-                placeholder="Enter your password"
+                placeholder="Password"
                 value={password}
                 onChange={(e) => setPass(e.target.value)}
                 required
               />
               <button
                 type="button"
-                className="input-action"
                 onClick={() => setShowP((p) => !p)}
+                style={{
+                  position: "absolute", right: 16, top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none", border: "none",
+                  cursor: "pointer", fontSize: 16, color: "rgba(109,40,217,0.5)",
+                }}
               >
                 {showPass ? "🙈" : "👁️"}
               </button>
             </div>
-          </div>
 
-          {error && (
-            <div
-              className="form-error mb-4"
-              style={{
-                background: "#FEE2E2", padding: "10px 14px",
-                borderRadius: 8, border: "1px solid #FCA5A5"
-              }}
-            >
-              {error}
+            {/* Forgot password */}
+            <div style={{ textAlign: "right", marginBottom: 20 }}>
+              <span
+                className="login-link"
+                onClick={() => setShowCreds((p) => !p)}
+              >
+                {showCreds ? "Hide Demo Credentials" : "Forgot Password?"}
+              </span>
             </div>
-          )}
 
-          <button
-            type="submit"
-            className="btn btn-purple w-full btn-lg"
-            disabled={loading}
-            style={{ justifyContent: "center" }}
-          >
-            {loading ? <span className="spinner" /> : null}
-            {loading ? "Signing in…" : "Sign In"}
-          </button>
-        </form>
+            {/* Demo creds */}
+            {showCreds && (
+              <div className="login-demo-creds">
+                <div style={{ marginBottom: 6 }}>
+                  <b>ASHA Worker:</b> admin@ashacare.in / admin123
+                </div>
+                <div>
+                  <b>Patient:</b> priya@email.com / patient123
+                </div>
+              </div>
+            )}
 
-        <div className="auth-divider">Demo Credentials</div>
-        <div style={{ background: "var(--purple-bg)", borderRadius: 10, padding: "12px 16px", fontSize: 12 }}>
-          <div style={{ marginBottom: 4 }}>
-            <b>Admin:</b> admin@ashacare.in / admin123
-          </div>
-          <div>
-            <b>Patient:</b> priya@email.com / patient123
+            {/* Error */}
+            {error && (
+              <div className="login-error">{error}</div>
+            )}
+
+            {/* Login button */}
+            <button
+              type="submit"
+              className="login-btn"
+              disabled={loading}
+            >
+              {loading ? <span className="spinner" style={{ borderTopColor: "#fff", borderColor: "rgba(255,255,255,0.3)" }} /> : null}
+              {loading ? "Signing in…" : "Login"}
+            </button>
+          </form>
+
+          {/* Register link */}
+          <div className="login-register-row">
+            Don't have an account?{" "}
+            <span className="login-register-link">Register</span>
           </div>
         </div>
       </div>
@@ -216,71 +330,89 @@ const PATIENT_NAV = [
   { key: "chatbot",  icon: "🤖", label: "AI Health Guide" },
 ];
 
-function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick }) {
+function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse }) {
   const nav = user.role === "admin" ? ADMIN_NAV : PATIENT_NAV;
+
   return (
     <>
       <div className={`sidebar-overlay ${mobileOpen ? "active" : ""}`} onClick={onOverlayClick} />
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
+      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${collapsed ? "sidebar-collapsed" : ""}`}>
+
+        {/* ── Brand + Hamburger Toggle ── */}
         <div className="sidebar-brand">
-          <div className="brand-card" onClick={() => onNav(nav[0].key)}>
-            <div className="brand-title">Asha<span>+</span></div>
-            <div className="brand-sub">Healthcare Platform</div>
-          </div>
+          {!collapsed && (
+            <div className="brand-card" onClick={() => onNav(nav[0].key)}>
+              <div className="brand-title">Asha<span>+</span></div>
+              <div className="brand-sub">Healthcare Platform</div>
+            </div>
+          )}
+          {/* Hamburger / collapse button */}
+          <button
+            className="sidebar-hamburger"
+            onClick={onToggleCollapse}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <span className="hamburger-line" />
+            <span className="hamburger-line" />
+            <span className="hamburger-line" />
+          </button>
         </div>
 
+        {/* ── Nav ── */}
         <nav className="sidebar-nav">
-          <div className="nav-label">Menu</div>
+          {!collapsed && <div className="nav-label">Menu</div>}
           {nav.map((item) => (
             <button
               key={item.key}
-              className={`nav-item ${active === item.key ? "active" : ""}`}
+              className={`nav-item ${active === item.key ? "active" : ""} ${collapsed ? "nav-item-collapsed" : ""}`}
               onClick={() => onNav(item.key)}
+              title={collapsed ? item.label : ""}
             >
               <span className="nav-icon">{item.icon}</span>
-              {item.label}
-              {item.badge && (
-                <span className="nav-badge">{item.badge}</span>
+              {!collapsed && (
+                <>
+                  <span className="nav-label-text">{item.label}</span>
+                  {item.badge && <span className="nav-badge">{item.badge}</span>}
+                </>
+              )}
+              {collapsed && item.badge && (
+                <span className="nav-badge-dot" />
               )}
             </button>
           ))}
         </nav>
 
+        {/* ── Footer user card ── */}
         <div className="sidebar-footer">
           <div
-            className="nav-item"
+            className={`nav-item ${collapsed ? "nav-item-collapsed" : ""}`}
             style={{
               background: "rgba(255,255,255,0.08)",
               border: "1px solid rgba(255,255,255,0.15)",
               borderRadius: "var(--radius-md)",
-              marginBottom: 0,
+              cursor: "default",
             }}
           >
             <div
               style={{
                 width: 34, height: 34, borderRadius: "50%",
-                background: "var(--gold-primary)",
+                background: "var(--gold-primary)", flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontWeight: 800, fontSize: 14, color: "var(--text-dark)",
-                flexShrink: 0,
               }}
             >
               {user.name[0]}
             </div>
-            <div style={{ overflow: "hidden" }}>
-              <div
-                style={{
-                  fontSize: 13, fontWeight: 700,
-                  color: "#fff", whiteSpace: "nowrap",
-                  overflow: "hidden", textOverflow: "ellipsis"
-                }}
-              >
-                {user.name}
+            {!collapsed && (
+              <div style={{ overflow: "hidden" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {user.name}
+                </div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+                  {user.role === "admin" ? "ASHA Worker" : "Patient"}
+                </div>
               </div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
-                {user.role === "admin" ? "ASHA Worker" : "Patient"}
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </aside>
@@ -954,15 +1086,15 @@ const PAGE_TITLES = {
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user,        setUser]   = useState(null);
-  const [page,        setPage]   = useState("dashboard");
-  const [patients,    setPatients] = useState(MOCK_PATIENTS);
-  const [mobileMenu,  setMobile]  = useState(false);
+  const [user,       setUser]     = useState(null);
+  const [page,       setPage]     = useState("dashboard");
+  const [patients]               = useState(MOCK_PATIENTS);
+  const [mobileMenu, setMobile]  = useState(false);
+  const [collapsed,  setCollapsed] = useState(false);
   const { toasts, add: toast, dismiss } = useToast();
 
   const login  = (u) => { setUser(u); setPage(u.role === "admin" ? "dashboard" : "profile"); };
-  const logout = () => { setUser(null); setPage("dashboard"); };
-
+  const logout = () => { setUser(null); setPage("dashboard"); setCollapsed(false); };
   const handleNav = (key) => { setPage(key); setMobile(false); };
 
   if (!user) return (
@@ -995,8 +1127,13 @@ export default function App() {
           onNav={handleNav}
           mobileOpen={mobileMenu}
           onOverlayClick={() => setMobile(false)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((p) => !p)}
         />
-        <div className="main-content">
+        <div
+          className="main-content"
+          style={{ marginLeft: collapsed ? "var(--sidebar-collapsed-w)" : "var(--sidebar-w)" }}
+        >
           <TopBar
             user={user}
             pageTitle={PAGE_TITLES[page] || "Asha Care"}
