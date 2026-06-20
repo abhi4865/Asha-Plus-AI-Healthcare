@@ -248,6 +248,7 @@ const ADMIN_NAV = [
   { key: "patients",  icon: "👥", label: "All Patients",  badge: "24" },
   { key: "register",  icon: "➕", label: "Register Patient" },
   { key: "chatbot",   icon: "🤖", label: "AI Assistant" },
+  { key: "medical",   icon: "🩻", label: "Medical Analysis" },
   { key: "schemes",   icon: "🏛️", label: "Govt Schemes" },
 ];
 
@@ -255,6 +256,7 @@ const PATIENT_NAV = [
   { key: "profile",  icon: "👤", label: "My Profile" },
   { key: "records",  icon: "📋", label: "Health Records" },
   { key: "chatbot",  icon: "🤖", label: "AI Health Guide" },
+  { key: "medical",  icon: "🩻", label: "Medical Analysis" },
   { key: "schemes",  icon: "🏛️", label: "Govt Scheme Suggestions" },
 ];
 
@@ -1123,6 +1125,543 @@ function GovtSchemes() {
   );
 }
 
+// ─── Medical Analysis — OCR + AI Document Reader ─────────────────────────────
+// Pipeline: image → OCR (Tesseract.js, on-device) → extracted text shown to
+// the user → ONLY that text (never the image) is sent to the AI for a short,
+// structured summary. This keeps token usage low and matches the "OCR first,
+// AI only when required" rule from the feature spec.
+
+// Tesseract.js is loaded from a CDN on first use instead of being bundled, so
+// no new dependency/file is needed — it attaches itself to `window.Tesseract`.
+function loadTesseract() {
+  if (typeof window !== "undefined" && window.Tesseract) {
+    return Promise.resolve(window.Tesseract);
+  }
+  if (!loadTesseract._promise) {
+    loadTesseract._promise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      script.async = true;
+      script.onload = () => resolve(window.Tesseract);
+      script.onerror = () =>
+        reject(new Error("Couldn't load the OCR engine. Check your internet connection and try again."));
+      document.head.appendChild(script);
+    });
+  }
+  return loadTesseract._promise;
+}
+
+// ── Expiry detection (Medicine Pack) — pure pattern matching, no AI call ────
+const MONTH_MAP = {
+  JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+  JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,
+};
+
+function buildExpiryResult(month, year, day) {
+  if (!month || month < 1 || month > 12) return null;
+  if (year < 100) year += 2000;
+  if (year < 2000 || year > 2099) return null;
+
+  // A pack is treated as valid through the end of the printed day/month.
+  const expiryDate = day
+    ? new Date(year, month - 1, day, 23, 59, 59)
+    : new Date(year, month, 0, 23, 59, 59);
+  if (isNaN(expiryDate.getTime())) return null;
+
+  const daysRemaining = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+  const dateLabel = day
+    ? `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`
+    : `${String(month).padStart(2, "0")}/${year}`;
+
+  return { dateLabel, status: daysRemaining >= 0 ? "Valid" : "Expired", daysRemaining };
+}
+
+function parseExpiryFromText(rawText) {
+  const text = rawText.toUpperCase().replace(/\s+/g, " ");
+  const keyword = "(?:EXP(?:IRY)?(?:\\.|\\s*DATE)?|USE\\s*BY|BEST\\s*BEFORE)\\s*[:.\\-]?\\s*";
+
+  // Numeric forms: "EXP 06/2027", "EXPIRY: 25-06-2027"
+  const numeric = text.match(new RegExp(keyword + "(\\d{1,2})[\\/\\-.](\\d{1,2}|\\d{4})(?:[\\/\\-.](\\d{2,4}))?"));
+  if (numeric) {
+    const result = numeric[3]
+      ? buildExpiryResult(parseInt(numeric[2], 10), parseInt(numeric[3], 10), parseInt(numeric[1], 10))
+      : buildExpiryResult(parseInt(numeric[1], 10), parseInt(numeric[2], 10), null);
+    if (result) return result;
+  }
+
+  // Textual-month forms: "EXP JUN 2027", "EXPIRY: JUN-27"
+  const textual = text.match(new RegExp(keyword + "([A-Z]{3,9})[\\s\\-.]?(\\d{2,4})"));
+  if (textual && MONTH_MAP[textual[1].slice(0, 3)]) {
+    const result = buildExpiryResult(MONTH_MAP[textual[1].slice(0, 3)], parseInt(textual[2], 10), null);
+    if (result) return result;
+  }
+
+  return null;
+}
+
+// ── Small helpers ───────────────────────────────────────────────────────────
+function hashText(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return h.toString(36);
+}
+
+async function callClaudeForAnalysis(systemPrompt, ocrText) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 650,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: `Here is the OCR-extracted text from the uploaded image. Analyze it and reply using the required structure only — no extra commentary:\n\n"""\n${ocrText}\n"""`,
+        },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error("The AI service didn't respond. Please try again in a moment.");
+  const data = await res.json();
+  const text = (data.content || []).map((c) => c.text || "").join("").trim();
+  if (!text) throw new Error("The AI didn't return a usable response. Please try again.");
+  return text;
+}
+
+// ── Per-document-type configuration ─────────────────────────────────────────
+const ANALYSIS_TYPES = {
+  prescription: {
+    key: "prescription",
+    icon: "💊",
+    title: "Doctor Prescription",
+    desc: "Upload a doctor's handwritten or printed prescription and get a structured summary.",
+    uploadLabel: "Upload Prescription",
+    accent: "purple",
+    systemPrompt: `You are a careful medical-document assistant helping an ASHA health worker in India read a doctor's prescription. You will be given OCR-extracted text from a prescription photo — it may contain OCR mistakes or be incomplete.
+
+Reply in PLAIN TEXT ONLY (no markdown asterisks, no numbered lists) using EXACTLY this structure, and keep the whole reply under 300 words:
+
+Doctor:
+<name, or "Not detected">
+
+Patient:
+<name, or "Not detected">
+
+Medicines Prescribed:
+- <medicine 1>
+- <medicine 2>
+
+Dosage Instructions:
+- <instruction>
+
+Important Notes:
+- <note>
+
+Warnings:
+- This is AI-generated and must be verified by a healthcare professional.
+
+If a field cannot be read from the OCR text, write "Not detected" rather than guessing.`,
+  },
+  lab: {
+    key: "lab",
+    icon: "🧪",
+    title: "Lab Report",
+    desc: "Upload blood test, urine test, thyroid report, CBC, sugar report, etc.",
+    uploadLabel: "Upload Lab Report",
+    accent: "gold",
+    systemPrompt: `You are a careful lab-report analysis assistant helping an ASHA health worker in India interpret a patient's lab report. You will be given OCR-extracted text from a lab report photo — it may contain OCR mistakes or be incomplete.
+
+Reply in PLAIN TEXT ONLY (no markdown asterisks, no numbered lists) using EXACTLY this structure, and keep the whole reply under 300 words:
+
+Normal Parameters:
+- <parameter: value>
+
+Abnormal Parameters:
+- <parameter: value>
+
+Possible Health Concerns:
+- <concern>
+
+Lifestyle Recommendations:
+- <recommendation>
+
+Suggested Questions For Doctor:
+- <question>
+
+Risk Level:
+<Low, Medium, or High>
+
+Medical Disclaimer:
+This analysis is informational only and is not a medical diagnosis.
+
+If a section has nothing to report, write "None detected" instead of leaving it blank.`,
+  },
+  medicine: {
+    key: "medicine",
+    icon: "💉",
+    title: "Medicine Pack",
+    desc: "Upload a medicine strip, bottle, or box image to identify medicine details.",
+    uploadLabel: "Upload Medicine",
+    accent: "green",
+    systemPrompt: `You are a careful medicine-identification assistant helping an ASHA health worker in India read a medicine strip, bottle, or box. You will be given OCR-extracted text from the packaging — it may contain OCR mistakes or be incomplete.
+
+Reply in PLAIN TEXT ONLY (no markdown asterisks, no numbered lists) using EXACTLY this structure, and keep the whole reply under 300 words:
+
+Medicine Name:
+<name, or "Not detected">
+
+Medicine Type:
+<Tablet, Syrup, Capsule, Injection, or Other>
+
+Common Uses:
+- <use>
+
+How To Use:
+- <instruction>
+
+Possible Side Effects:
+- <side effect>
+
+Storage Instructions:
+- <instruction>
+
+Important Warnings:
+- <warning>
+
+Medical Disclaimer:
+Consult a healthcare professional before taking any medicine.
+
+Do not comment on the expiry date — that is calculated separately and shown above your summary.`,
+  },
+};
+
+// ── Renders the AI's structured plain-text reply with light formatting ─────
+function riskBadgeClass(value) {
+  const v = value.toLowerCase();
+  if (v.includes("high")) return "badge-red";
+  if (v.includes("medium")) return "badge-gold";
+  if (v.includes("low")) return "badge-green";
+  return "badge-purple";
+}
+
+function AnalysisOutput({ text }) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  return (
+    <div className="analysis-output">
+      {lines.map((line, i) => {
+        const headerOnly = line.match(/^([A-Za-z][A-Za-z /&]{2,40}):$/);
+        if (headerOnly) {
+          return <div key={i} className="analysis-heading">{headerOnly[1]}</div>;
+        }
+        const bullet = line.match(/^[-•]\s*(.+)$/);
+        if (bullet) {
+          return <div key={i} className="analysis-bullet">• {bullet[1]}</div>;
+        }
+        const kv = line.match(/^([A-Za-z][A-Za-z /&]{2,40}):\s*(.+)$/);
+        if (kv) {
+          const label = kv[1];
+          const value = kv[2];
+          const isRisk = /risk level/i.test(label);
+          return (
+            <div key={i} className="analysis-kv">
+              <span className="analysis-kv-label">{label}:</span>{" "}
+              {isRisk ? (
+                <span className={`badge ${riskBadgeClass(value)}`}>{value}</span>
+              ) : (
+                <span className="analysis-kv-value">{value}</span>
+              )}
+            </div>
+          );
+        }
+        return <div key={i} className="analysis-line">{line}</div>;
+      })}
+    </div>
+  );
+}
+
+// ── Upload + OCR + AI flow for a single document type ──────────────────────
+function MedicalUploadCard({ meta, onBack, cache, setCache }) {
+  const [file, setFile]       = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [status, setStatus]   = useState("idle"); // idle | ocr | analyzing | done | error
+  const [ocrText, setOcrText] = useState("");
+  const [ocrPct, setOcrPct]   = useState(0);
+  const [showOcr, setShowOcr] = useState(false);
+  const [analysis, setAnalysis] = useState("");
+  const [expiry, setExpiry]   = useState(null);
+  const [fromCache, setFromCache] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const acceptFile = (f) => {
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      setErrorMsg("Please upload an image file (JPG or PNG).");
+      setStatus("error");
+      return;
+    }
+    if (f.size > 8 * 1024 * 1024) {
+      setErrorMsg("That image is larger than 8 MB. Please upload a smaller photo.");
+      setStatus("error");
+      return;
+    }
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setStatus("idle");
+    setOcrText(""); setAnalysis(""); setExpiry(null); setErrorMsg(""); setFromCache(false);
+  };
+
+  const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null); setPreview(null); setStatus("idle");
+    setOcrText(""); setOcrPct(0); setAnalysis(""); setExpiry(null);
+    setErrorMsg(""); setFromCache(false); setShowOcr(false);
+  };
+
+  const runAnalysis = async () => {
+    if (!file) return;
+    setErrorMsg(""); setFromCache(false);
+    try {
+      // 1) OCR runs first, on-device — this is the only thing that "looks" at the image
+      setStatus("ocr"); setOcrPct(0);
+      const Tesseract = await loadTesseract();
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text") setOcrPct(Math.round(m.progress * 100));
+        },
+      });
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      const text = (data?.text || "").trim();
+      setOcrText(text);
+
+      if (!text) {
+        throw new Error("Couldn't read any text from this image. Try a clearer, well-lit photo.");
+      }
+
+      // 2) Medicine packs: expiry is detected straight from OCR text, no AI needed
+      if (meta.key === "medicine") {
+        setExpiry(parseExpiryFromText(text));
+      }
+
+      // 3) Re-use a cached AI summary for identical text instead of calling the AI again.
+      // TODO: back this with Firestore (medical_reports / medicine_cache / lab_reports /
+      // prescriptions collections, as in the spec) once Firebase is wired into this app —
+      // this in-memory cache only lasts the current session.
+      const cacheKey = `${meta.key}:${hashText(text)}`;
+      if (cache[cacheKey]) {
+        setAnalysis(cache[cacheKey]);
+        setFromCache(true);
+        setStatus("done");
+        return;
+      }
+
+      // 4) Only the extracted TEXT is sent to the AI — never the image — to keep cost low
+      setStatus("analyzing");
+      const result = await callClaudeForAnalysis(meta.systemPrompt, text);
+      setAnalysis(result);
+      setCache((prev) => ({ ...prev, [cacheKey]: result }));
+      setStatus("done");
+    } catch (err) {
+      setErrorMsg(err.message || "Something went wrong. Please try again.");
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="page-body">
+      <div className="medical-type-header">
+        <button className="btn btn-outline-purple btn-sm" onClick={onBack}>← Back</button>
+        <div className="medical-type-heading">
+          <span style={{ fontSize: 28 }}>{meta.icon}</span>
+          <div>
+            <div className="card-title" style={{ marginBottom: 2 }}>{meta.title}</div>
+            <div className="text-sm text-muted">{meta.desc}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card card-ai">
+        <div className="card-body">
+          {!file && (
+            <label
+              className={`upload-zone ${dragOver ? "dragover" : ""}`}
+              style={{ display: "block" }}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                acceptFile(e.dataTransfer.files?.[0]);
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => acceptFile(e.target.files?.[0])}
+              />
+              <div className="upload-icon">{meta.icon}</div>
+              <div className="upload-title">{meta.uploadLabel}</div>
+              <div className="upload-sub">Click to browse or drag a photo here · JPG or PNG</div>
+            </label>
+          )}
+
+          {errorMsg && status === "error" && !file && (
+            <div className="error-banner mt-2">⚠️ {errorMsg}</div>
+          )}
+
+          {file && (
+            <div className="medical-upload-active">
+              <div className="medical-preview-row">
+                <img src={preview} alt="Uploaded document" className="medical-preview-thumb" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: "var(--text-dark)" }} className="truncate">{file.name}</div>
+                  <div className="text-sm text-muted">{(file.size / 1024).toFixed(0)} KB</div>
+                  {status === "idle" && (
+                    <div className="flex gap-2 mt-2" style={{ flexWrap: "wrap" }}>
+                      <button className="btn btn-gold btn-sm" onClick={runAnalysis}>🔍 Run Analysis</button>
+                      <button className="btn btn-outline-purple btn-sm" onClick={reset}>Choose Different Image</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(status === "ocr" || status === "analyzing") && (
+                <div className="medical-progress">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className="spinner"
+                      style={{ borderColor: "rgba(124,58,237,0.25)", borderTopColor: "var(--purple-primary)", width: 16, height: 16 }}
+                    />
+                    <span className="text-sm" style={{ color: "var(--purple-deep)", fontWeight: 600 }}>
+                      {status === "ocr" ? "Reading text from the image…" : "Analyzing with AI…"}
+                    </span>
+                  </div>
+                  {status === "ocr" && (
+                    <div className="progress-bar">
+                      <div className="progress-bar-fill" style={{ width: `${ocrPct}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {errorMsg && status === "error" && (
+                <div className="error-banner mt-2">
+                  ⚠️ {errorMsg}
+                  <div className="mt-2">
+                    <button className="btn btn-outline-purple btn-sm" onClick={runAnalysis}>Try Again</button>
+                  </div>
+                </div>
+              )}
+
+              {ocrText && (
+                <div className="ocr-text-block">
+                  <button className="ocr-text-toggle" onClick={() => setShowOcr((p) => !p)}>
+                    {showOcr ? "▾" : "▸"} Extracted Text (OCR)
+                  </button>
+                  {showOcr && <div className="ocr-text-box">{ocrText}</div>}
+                </div>
+              )}
+
+              {meta.key === "medicine" && expiry && (
+                <div className={`expiry-banner ${expiry.status === "Valid" ? "valid" : "expired"}`}>
+                  <div style={{ fontSize: 22 }}>{expiry.status === "Valid" ? "✅" : "⛔"}</div>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Medicine Status: {expiry.status}</div>
+                    <div className="text-sm">
+                      Expiry detected: {expiry.dateLabel} ·{" "}
+                      {expiry.daysRemaining >= 0
+                        ? `${expiry.daysRemaining} day(s) remaining`
+                        : `Expired ${Math.abs(expiry.daysRemaining)} day(s) ago`}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {meta.key === "medicine" && (status === "analyzing" || status === "done") && !expiry && (
+                <div className="expiry-banner unknown">
+                  <div style={{ fontSize: 22 }}>❔</div>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Expiry date not detected</div>
+                    <div className="text-sm">Try a clearer photo of the expiry print, or check it manually.</div>
+                  </div>
+                </div>
+              )}
+
+              {analysis && (
+                <div className="card mt-4">
+                  <div className="card-header">
+                    <div className="card-title">📝 AI Summary</div>
+                    {fromCache && <span className="badge badge-green">⚡ From cache · no AI call needed</span>}
+                  </div>
+                  <div className="card-body">
+                    <AnalysisOutput text={analysis} />
+                    <div className="mt-4">
+                      <button className="btn btn-outline-purple btn-sm" onClick={reset}>
+                        Analyze Another {meta.title}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Top-level page: three feature cards, or the upload flow for one of them ─
+function MedicalAnalysis() {
+  const [activeType, setActiveType] = useState(null); // null | "prescription" | "lab" | "medicine"
+  const [cache, setCache] = useState({}); // AI-result cache for this session, keyed by type+text hash
+
+  if (activeType) {
+    return (
+      <MedicalUploadCard
+        key={activeType}
+        meta={ANALYSIS_TYPES[activeType]}
+        onBack={() => setActiveType(null)}
+        cache={cache}
+        setCache={setCache}
+      />
+    );
+  }
+
+  return (
+    <div className="page-body">
+      <div className="card card-ai mb-4">
+        <div className="card-header">
+          <div className="card-title">
+            🩻 Medical Analysis
+            <span className="ai-badge">✨ OCR + Claude AI</span>
+          </div>
+        </div>
+        <div className="card-body" style={{ color: "var(--text-muted)", fontSize: 13, padding: "16px 24px" }}>
+          Upload a photo of a prescription, lab report, or medicine pack. Text is read on-device with OCR
+          first — only that text, never the image, is sent to AI for a short, structured summary.
+        </div>
+      </div>
+
+      <div className="feature-grid">
+        {Object.values(ANALYSIS_TYPES).map((t) => (
+          <div key={t.key} className={`feature-card feature-card-${t.accent}`}>
+            <div className="feature-icon-circle">{t.icon}</div>
+            <div className="feature-title">{t.title}</div>
+            <div className="feature-desc">{t.desc}</div>
+            <button className="btn btn-gold" onClick={() => setActiveType(t.key)}>
+              {t.uploadLabel}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Patient Profile (Admin/ASHA view, with trackable history) ───────────────
 function PatientProfileView({ patient, history, onBack, onEdit }) {
   if (!patient) {
@@ -1269,6 +1808,7 @@ const PAGE_TITLES = {
   patients:  "All Patients",
   register:  "Register Patient",
   chatbot:   "AI Assistant",
+  medical:   "Medical Analysis",
   profile:   "My Profile",
   records:   "Health Records",
   schemes:   "Govt Scheme Suggestions",
@@ -1370,11 +1910,13 @@ export default function App() {
         />
       );
       if (page === "chatbot")   return <ChatBot />;
+      if (page === "medical")   return <MedicalAnalysis />;
       if (page === "schemes")   return <GovtSchemes />;
     } else {
       if (page === "profile")  return <PatientDashboard user={user} />;
       if (page === "records")  return <HealthRecords />;
       if (page === "chatbot")  return <ChatBot />;
+      if (page === "medical")  return <MedicalAnalysis />;
       if (page === "schemes")  return <GovtSchemes />;
     }
     return null;
