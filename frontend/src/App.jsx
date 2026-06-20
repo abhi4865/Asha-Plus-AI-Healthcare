@@ -39,6 +39,26 @@ const MOCK_PATIENTS = [
 const ADMIN_CREDS  = { email: "admin@ashacare.in", password: "admin123" };
 const PATIENT_CREDS = { email: "priya@email.com",   password: "patient123" };
 
+// ─── Mock visit / history records, keyed by patient ID ───────────────────────
+const MOCK_HISTORY = {
+  P001: [
+    { date: "2025-01-15", type: "Follow-up Checkup", worker: "Asha Devi (ASHA Worker)", note: "Blood sugar slightly elevated, advised diet control.", bp: "128/84", sugar: "142 mg/dL", weight: "61 kg" },
+    { date: "2024-12-02", type: "Diabetes Screening", worker: "Dr. Sunita Rao", note: "HbA1c 6.2 – pre-diabetic range, started on Metformin.", bp: "124/80", sugar: "150 mg/dL", weight: "62 kg" },
+    { date: "2024-11-10", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Initial registration, baseline vitals recorded.", bp: "120/80", sugar: "—", weight: "63 kg" },
+  ],
+  P002: [
+    { date: "2025-02-10", type: "BP Monitoring", worker: "Asha Devi (ASHA Worker)", note: "BP under control with current medication.", bp: "138/88", sugar: "—", weight: "78 kg" },
+    { date: "2024-12-01", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Diagnosed with hypertension, prescribed Amlodipine.", bp: "150/95", sugar: "—", weight: "79 kg" },
+  ],
+  P003: [
+    { date: "2025-03-05", type: "Asthma Review", worker: "Dr. Ravi Kumar", note: "Mild wheezing reported, inhaler technique reviewed.", bp: "118/76", sugar: "—", weight: "54 kg" },
+    { date: "2025-01-15", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Asthma confirmed, salbutamol inhaler issued.", bp: "116/74", sugar: "—", weight: "55 kg" },
+  ],
+  P004: [
+    { date: "2025-02-20", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "No existing conditions found, general health good.", bp: "118/78", sugar: "92 mg/dL", weight: "70 kg" },
+  ],
+};
+
 // ─── Icons (emoji-based, no deps) ────────────────────────────────────────────
 const Icon = ({ e, size }) => (
   <span style={{ fontSize: size || 16, lineHeight: 1 }}>{e}</span>
@@ -353,7 +373,7 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle }) {
 }
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
-function AdminDashboard({ patients, onNav }) {
+function AdminDashboard({ patients, onNav, onEditPatient, onViewPatient, onDeletePatient }) {
   const male   = patients.filter((p) => p.gender === "Male").length;
   const female = patients.filter((p) => p.gender === "Female").length;
 
@@ -382,26 +402,29 @@ function AdminDashboard({ patients, onNav }) {
       <div className="flex items-center gap-3 mb-4">
         <div className="btn-tabs">
           <button className="btn-tab active">Patient Entry</button>
-          <button className="btn-tab">Patient History</button>
         </div>
         <button className="btn btn-gold btn-sm" onClick={() => onNav("register")}>
           ➕ Add Patient
         </button>
       </div>
 
-      {/* AI-Powered Card */}
+      {/* Patients Card */}
       <div className="card card-ai">
         <div className="card-header">
           <div className="card-title">
-            <span className="card-title-hi">मरीज की जानकारी (AI Powered)</span>
-            <span className="ai-badge">✨ AI</span>
+            <span className="card-title-hi">मरीज की जानकारी</span>
           </div>
           <button className="btn btn-gold btn-sm" onClick={() => onNav("chatbot")}>
             Open AI Assistant
           </button>
         </div>
         <div className="card-body">
-          <PatientsTable patients={patients} />
+          <PatientsTable
+            patients={patients}
+            onEdit={onEditPatient}
+            onView={onViewPatient}
+            onDelete={onDeletePatient}
+          />
         </div>
       </div>
     </div>
@@ -409,14 +432,17 @@ function AdminDashboard({ patients, onNav }) {
 }
 
 // ─── Patients Table ───────────────────────────────────────────────────────────
-function PatientsTable({ patients }) {
+function PatientsTable({ patients, onEdit, onView, onDelete }) {
   const [q, setQ] = useState("");
-  const filtered = patients.filter(
-    (p) =>
-      p.name.toLowerCase().includes(q.toLowerCase()) ||
-      p.id.toLowerCase().includes(q.toLowerCase()) ||
-      p.village.toLowerCase().includes(q.toLowerCase())
-  );
+  const query = q.trim().toLowerCase();
+  const filtered = query
+    ? patients.filter((p) => {
+        const name    = (p.name || "").toLowerCase();
+        const id      = (p.id || "").toLowerCase();
+        const village = (p.village || "").toLowerCase();
+        return name.includes(query) || id.includes(query) || village.includes(query);
+      })
+    : patients;
 
   return (
     <>
@@ -425,6 +451,8 @@ function PatientsTable({ patients }) {
           <span className="search-icon">🔍</span>
           <input
             className="search-input"
+            type="text"
+            autoComplete="off"
             placeholder="Search patients by name, ID or village…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -466,7 +494,16 @@ function PatientsTable({ patients }) {
                     <div className="patient-cell">
                       <div className="patient-avatar">{p.name[0]}</div>
                       <div>
-                        <div className="patient-name">{p.name}</div>
+                        <div
+                          className="patient-name patient-name-link"
+                          role="button"
+                          tabIndex={0}
+                          title="View patient profile & history"
+                          onClick={() => onView?.(p)}
+                          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onView?.(p)}
+                        >
+                          {p.name}
+                        </div>
                         <div className="patient-id">{p.email}</div>
                       </div>
                     </div>
@@ -484,9 +521,8 @@ function PatientsTable({ patients }) {
                   <td className="text-xs text-muted">{p.registered}</td>
                   <td>
                     <div className="flex gap-2">
-                      <button className="btn btn-purple btn-sm">View</button>
-                      <button className="btn btn-outline-purple btn-sm">Edit</button>
-                      <button className="btn btn-danger btn-sm">Del</button>
+                      <button className="btn btn-outline-purple btn-sm" onClick={() => onEdit?.(p)}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => onDelete?.(p)}>Del</button>
                     </div>
                   </td>
                 </tr>
@@ -499,16 +535,27 @@ function PatientsTable({ patients }) {
   );
 }
 
-// ─── Patient Registration Form ────────────────────────────────────────────────
-function RegisterPatient({ onNav, toast }) {
+// ─── Patient Registration / Edit Form ──────────────────────────────────────────
+function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel }) {
   const [listening, setListening] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [form, setForm]           = useState({
-    fullName: "", age: "", dob: "", gender: "", mobile: "", email: "",
-    weight: "", height: "", blood: "", address: "", village: "",
-    state: "Uttar Pradesh", pin: "", diseases: "", allergies: "",
-    medications: "", emergencyName: "", emergencyNumber: "",
-  });
+  const [form, setForm]           = useState(() =>
+    editPatient
+      ? {
+          fullName: editPatient.name || "", age: String(editPatient.age ?? ""), dob: "",
+          gender: editPatient.gender || "", mobile: editPatient.mobile || "", email: editPatient.email || "",
+          weight: "", height: "", blood: editPatient.blood || "", address: "",
+          village: editPatient.village || "", state: editPatient.state || "Uttar Pradesh", pin: "",
+          diseases: editPatient.diseases === "None" ? "" : (editPatient.diseases || ""),
+          allergies: "", medications: "", emergencyName: "", emergencyNumber: "",
+        }
+      : {
+          fullName: "", age: "", dob: "", gender: "", mobile: "", email: "",
+          weight: "", height: "", blood: "", address: "", village: "",
+          state: "Uttar Pradesh", pin: "", diseases: "", allergies: "",
+          medications: "", emergencyName: "", emergencyNumber: "",
+        }
+  );
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -551,7 +598,30 @@ function RegisterPatient({ onNav, toast }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    toast("Patient registered successfully!", "success", `ID: P00${Math.floor(Math.random()*900+100)}`);
+    if (editPatient) {
+      onSave?.({
+        ...editPatient,
+        name: form.fullName || editPatient.name,
+        age: Number(form.age) || editPatient.age,
+        gender: form.gender || editPatient.gender,
+        mobile: form.mobile || editPatient.mobile,
+        email: form.email || editPatient.email,
+        village: form.village || editPatient.village,
+        state: form.state || editPatient.state,
+        blood: form.blood || editPatient.blood,
+        diseases: form.diseases || "None",
+      });
+      return;
+    }
+    const newPatient = {
+      id: `P${String(Math.floor(Math.random() * 900 + 100))}`,
+      name: form.fullName, age: Number(form.age) || 0, gender: form.gender,
+      blood: form.blood, mobile: form.mobile, email: form.email,
+      village: form.village, state: form.state, diseases: form.diseases || "None",
+      registered: new Date().toISOString().slice(0, 10),
+    };
+    toast("Patient registered successfully!", "success", `ID: ${newPatient.id}`);
+    onSave?.(newPatient);
     setTimeout(() => onNav("patients"), 1200);
   };
 
@@ -584,7 +654,8 @@ function RegisterPatient({ onNav, toast }) {
 
   return (
     <div className="page-body">
-      {/* OCR Zone */}
+      {/* OCR Zone (new registrations only) */}
+      {!editPatient && (
       <div className="card mb-6">
         <div className="card-header">
           <div className="card-title">📄 Smart Document Scanner (OCR)</div>
@@ -613,13 +684,14 @@ function RegisterPatient({ onNav, toast }) {
           </div>
         </div>
       </div>
+      )}
 
       {/* Form */}
       <div className="card card-ai">
         <div className="card-header">
           <div className="card-title">
-            <span className="card-title-hi">मरीज पंजीकरण</span>
-            <span className="ai-badge">🎙️ Voice Input</span>
+            <span className="card-title-hi">{editPatient ? "मरीज संपादित करें (Edit Patient)" : "मरीज पंजीकरण"}</span>
+            <span className="ai-badge">{editPatient ? "✏️ Edit Mode" : "🎙️ Voice Input"}</span>
           </div>
         </div>
         <div className="card-body">
@@ -719,11 +791,11 @@ function RegisterPatient({ onNav, toast }) {
             {/* Submit */}
             <div className="flex gap-3" style={{ justifyContent: "flex-end", marginTop: 8 }}>
               <button type="button" className="btn btn-outline-purple"
-                onClick={() => onNav("patients")}>
+                onClick={() => (editPatient ? onCancel?.() : onNav("patients"))}>
                 Cancel
               </button>
               <button type="submit" className="btn btn-gold btn-lg">
-                ✅ Register Patient
+                {editPatient ? "💾 Update Patient" : "✅ Register Patient"}
               </button>
             </div>
           </form>
@@ -1049,6 +1121,146 @@ function GovtSchemes() {
   );
 }
 
+// ─── Patient Profile (Admin/ASHA view, with trackable history) ───────────────
+function PatientProfileView({ patient, history, onBack, onEdit }) {
+  if (!patient) {
+    return (
+      <div className="page-body">
+        <div className="card"><div className="card-body">Patient not found.</div></div>
+      </div>
+    );
+  }
+
+  const records = history || [];
+  const lastVisit = records[0]?.date || patient.registered;
+
+  return (
+    <div className="page-body">
+      {/* Back / Edit actions */}
+      <div className="flex items-center gap-3 mb-4" style={{ justifyContent: "space-between" }}>
+        <button className="btn btn-outline-purple btn-sm" onClick={onBack}>← Back</button>
+        <button className="btn btn-gold btn-sm" onClick={() => onEdit(patient)}>✏️ Edit Patient</button>
+      </div>
+
+      {/* Profile Header */}
+      <div className="profile-header mb-6">
+        <div className="profile-avatar">{patient.name[0]}</div>
+        <div>
+          <div className="profile-name">{patient.name}</div>
+          <div className="profile-role">Patient ID: {patient.id}</div>
+          <div className="profile-meta">
+            <div className="profile-meta-item">🩸 {patient.blood}</div>
+            <div className="profile-meta-item">👤 {patient.gender}, {patient.age} yrs</div>
+            <div className="profile-meta-item">📍 {patient.village}</div>
+            <div className="profile-meta-item">📞 {patient.mobile}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick stats */}
+      <div className="stats-grid mb-6">
+        <div className="stat-card gold">
+          <div className="stat-icon">🩸</div>
+          <div className="stat-label">Blood Group</div>
+          <div className="stat-value" style={{ fontSize: 24 }}>{patient.blood}</div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-icon">📋</div>
+          <div className="stat-label">Total Visits</div>
+          <div className="stat-value" style={{ fontSize: 24 }}>{records.length}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-icon">✅</div>
+          <div className="stat-label">Last Visit</div>
+          <div className="stat-value" style={{ fontSize: 18 }}>{lastVisit}</div>
+        </div>
+        <div className="stat-card pink">
+          <div className="stat-icon">💊</div>
+          <div className="stat-label">Active Conditions</div>
+          <div className="stat-value">{patient.diseases === "None" ? 0 : 1}</div>
+        </div>
+      </div>
+
+      {/* Health Info */}
+      <div className="card card-ai mb-6">
+        <div className="card-header">
+          <div className="card-title-hi">स्वास्थ्य जानकारी</div>
+        </div>
+        <div className="card-body">
+          <div className="form-grid">
+            {[
+              ["Full Name",   patient.name],
+              ["Age",         `${patient.age} years`],
+              ["Gender",      patient.gender],
+              ["Blood Group", patient.blood],
+              ["Mobile",      patient.mobile],
+              ["Email",       patient.email],
+              ["Village",     patient.village],
+              ["State",       patient.state],
+              ["Condition",   patient.diseases],
+              ["Registered",  patient.registered],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <div className="form-label">{k}</div>
+                <div style={{ fontWeight: 600, color: "var(--text-dark)", marginTop: 4 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Visit / Tracking History */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">📈 Patient History &amp; Tracking</div>
+          <span className="badge badge-gold">{records.length} Record{records.length !== 1 ? "s" : ""}</span>
+        </div>
+        <div className="card-body">
+          {records.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+              No visit history recorded yet.
+            </div>
+          ) : (
+            records.map((r, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "16px 0",
+                  borderBottom: i < records.length - 1 ? "1px solid var(--border)" : "none",
+                  display: "flex",
+                  gap: 16,
+                  alignItems: "flex-start",
+                }}
+              >
+                <div
+                  style={{
+                    width: 44, height: 44, borderRadius: "var(--radius-md)",
+                    background: "var(--purple-soft)", display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                    fontSize: 22, flexShrink: 0,
+                  }}
+                >🩺</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: "var(--text-dark)" }}>{r.type}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0" }}>
+                    {r.worker} · {r.date}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-dark)", marginBottom: 6 }}>{r.note}</div>
+                  <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                    {r.bp && <span className="badge badge-purple">BP {r.bp}</span>}
+                    {r.sugar && r.sugar !== "—" && <span className="badge badge-gold">Sugar {r.sugar}</span>}
+                    {r.weight && <span className="badge badge-green">Weight {r.weight}</span>}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page Title Map ───────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -1058,20 +1270,48 @@ const PAGE_TITLES = {
   profile:   "My Profile",
   records:   "Health Records",
   schemes:   "Govt Scheme Suggestions",
+  "patient-profile": "Patient Profile",
+  "edit-patient":    "Edit Patient",
 };
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [user,       setUser]     = useState(null);
   const [page,       setPage]     = useState("dashboard");
-  const [patients]               = useState(MOCK_PATIENTS);
+  const [patients,   setPatients] = useState(MOCK_PATIENTS);
   const [mobileMenu, setMobile]  = useState(false);
   const [collapsed,  setCollapsed] = useState(false);
+  const [activePatient, setActivePatient] = useState(null); // patient being viewed/edited
+  const [returnPage, setReturnPage] = useState("dashboard"); // page to return to after view/edit
+  const [confirmDelete, setConfirmDelete] = useState(null); // patient pending delete confirmation
   const { toasts, add: toast, dismiss } = useToast();
 
   const login  = (u) => { setUser(u); setPage(u.role === "admin" ? "dashboard" : "profile"); };
   const logout = () => { setUser(null); setPage("dashboard"); setCollapsed(false); };
   const handleNav = (key) => { setPage(key); setMobile(false); };
+
+  const openProfile = (p) => { setActivePatient(p); setReturnPage(page); setPage("patient-profile"); };
+  const openEdit    = (p) => { setActivePatient(p); setReturnPage(page); setPage("edit-patient"); };
+
+  const saveEditedPatient = (updated) => {
+    setPatients((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+    setActivePatient(updated);
+    toast("Patient updated successfully!", "success", `${updated.name} (${updated.id})`);
+    setPage(returnPage === "edit-patient" ? "dashboard" : returnPage);
+  };
+
+  const addNewPatient = (p) => setPatients((prev) => [...prev, p]);
+
+  const requestDelete = (p) => setConfirmDelete(p);
+  const cancelDelete  = () => setConfirmDelete(null);
+  const confirmDeletePatient = () => {
+    setPatients((prev) => prev.filter((x) => x.id !== confirmDelete.id));
+    toast("Patient deleted", "success", `${confirmDelete.name} (${confirmDelete.id}) removed`);
+    if (page === "patient-profile" && activePatient?.id === confirmDelete.id) {
+      setPage(returnPage === "patient-profile" ? "dashboard" : returnPage);
+    }
+    setConfirmDelete(null);
+  };
 
   if (!user) return (
     <>
@@ -1082,9 +1322,51 @@ export default function App() {
 
   const renderPage = () => {
     if (user.role === "admin") {
-      if (page === "dashboard") return <AdminDashboard patients={patients} onNav={handleNav} />;
-      if (page === "patients")  return <div className="page-body"><div className="card card-ai"><div className="card-header"><div className="card-title">👥 All Patients</div></div><div className="card-body"><PatientsTable patients={patients} /></div></div></div>;
-      if (page === "register")  return <RegisterPatient onNav={handleNav} toast={toast} />;
+      if (page === "dashboard") return (
+        <AdminDashboard
+          patients={patients}
+          onNav={handleNav}
+          onEditPatient={openEdit}
+          onViewPatient={openProfile}
+          onDeletePatient={requestDelete}
+        />
+      );
+      if (page === "patients")  return (
+        <div className="page-body">
+          <div className="card card-ai">
+            <div className="card-header"><div className="card-title">👥 All Patients</div></div>
+            <div className="card-body">
+              <PatientsTable
+                patients={patients}
+                onEdit={openEdit}
+                onView={openProfile}
+                onDelete={requestDelete}
+              />
+            </div>
+          </div>
+        </div>
+      );
+      if (page === "register")  return (
+        <RegisterPatient key="new" onNav={handleNav} toast={toast} onSave={addNewPatient} />
+      );
+      if (page === "edit-patient") return (
+        <RegisterPatient
+          key={activePatient?.id || "edit"}
+          onNav={handleNav}
+          toast={toast}
+          editPatient={activePatient}
+          onSave={saveEditedPatient}
+          onCancel={() => setPage(returnPage)}
+        />
+      );
+      if (page === "patient-profile") return (
+        <PatientProfileView
+          patient={patients.find((p) => p.id === activePatient?.id) || activePatient}
+          history={MOCK_HISTORY[activePatient?.id] || []}
+          onBack={() => setPage(returnPage)}
+          onEdit={openEdit}
+        />
+      );
       if (page === "chatbot")   return <ChatBot />;
       if (page === "schemes")   return <GovtSchemes />;
     } else {
@@ -1120,6 +1402,27 @@ export default function App() {
           {renderPage()}
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">🗑️ Delete Patient</div>
+              <button className="modal-close" onClick={cancelDelete}>✕</button>
+            </div>
+            <div className="modal-body">
+              Are you sure you want to delete <strong>{confirmDelete.name}</strong> (ID: {confirmDelete.id})?
+              This will permanently remove their record and visit history. This action cannot be undone.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline-purple" onClick={cancelDelete}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDeletePatient}>Delete Patient</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Toast toasts={toasts} dismiss={dismiss} />
     </AuthContext.Provider>
   );

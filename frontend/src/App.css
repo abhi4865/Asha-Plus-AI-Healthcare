@@ -849,6 +849,17 @@ body {
 .patient-name  { font-weight: 600; color: var(--text-dark); font-size: 14px; }
 .patient-id    { font-size: 11px; color: var(--text-muted); }
 
+.patient-name-link {
+  cursor: pointer;
+  transition: var(--transition);
+}
+.patient-name-link:hover,
+.patient-name-link:focus-visible {
+  color: var(--purple-primary);
+  text-decoration: underline;
+  outline: none;
+}
+
 /* ============================================
    SEARCH & FILTER BAR
    ============================================ */
