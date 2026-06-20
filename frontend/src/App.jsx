@@ -436,26 +436,28 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
   const [q, setQ] = useState("");
   const query = q.trim().toLowerCase();
   const filtered = query
-    ? patients.filter((p) => {
-        const name    = (p.name || "").toLowerCase();
-        const id      = (p.id || "").toLowerCase();
-        const village = (p.village || "").toLowerCase();
-        return name.includes(query) || id.includes(query) || village.includes(query);
-      })
+    ? patients.filter((p) => (p.name || "").toLowerCase().includes(query))
     : patients;
 
   return (
     <>
       <div className="search-bar">
         <div className="search-input-wrapper">
-          <span className="search-icon">🔍</span>
           <input
             className="search-input"
             type="text"
             autoComplete="off"
-            placeholder="Search patients by name, ID or village…"
+            placeholder="🔍  Search patients by name…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            style={{
+              color: "#1E1B4B",
+              caretColor: "#7C3AED",
+              WebkitTextFillColor: "#1E1B4B",
+              opacity: 1,
+              position: "relative",
+              zIndex: 1,
+            }}
           />
         </div>
         <select className="form-select" style={{ width: "auto", padding: "10px 14px" }}>

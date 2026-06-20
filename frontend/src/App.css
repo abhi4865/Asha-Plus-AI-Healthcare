@@ -879,11 +879,12 @@ body {
 
 .search-input {
   width: 100%;
-  padding: 10px 14px 10px 40px;
+  padding: 10px 16px;
   border: 2px solid var(--border);
   border-radius: var(--radius-pill);
   font-family: inherit;
   font-size: 14px;
+  color: var(--text-dark);
   background: var(--white);
   outline: none;
   transition: var(--transition);
@@ -892,15 +893,6 @@ body {
 .search-input:focus {
   border-color: var(--purple-primary);
   box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
-}
-
-.search-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--purple-light);
-  font-size: 16px;
 }
 
 /* ============================================
