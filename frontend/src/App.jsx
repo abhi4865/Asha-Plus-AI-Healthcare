@@ -243,12 +243,36 @@ function AuthPage({ onLogin }) {
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
+// Custom clipboard logo used for "Medical Analysis" — rendered inline so it
+// stays crisp at any size and needs no extra image file/request.
+function ClipboardLogoIcon({ size = 20, style }) {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0, ...style }}
+    >
+      <rect x="12" y="14" width="40" height="46" rx="4" fill="#d2a679" stroke="#231f20" strokeWidth="2" strokeLinejoin="round" />
+      <rect x="18" y="24" width="28" height="32" fill="#ffffff" stroke="#231f20" strokeWidth="2" strokeLinejoin="round" />
+      <line x1="23" y1="30" x2="41" y2="30" stroke="#231f20" strokeWidth="2" strokeLinecap="round" />
+      <line x1="23" y1="36" x2="41" y2="36" stroke="#231f20" strokeWidth="2" strokeLinecap="round" />
+      <line x1="23" y1="42" x2="41" y2="42" stroke="#231f20" strokeWidth="2" strokeLinecap="round" />
+      <line x1="23" y1="48" x2="31" y2="48" stroke="#231f20" strokeWidth="2" strokeLinecap="round" />
+      <rect x="22" y="10" width="20" height="12" rx="2" fill="#e6e6e6" stroke="#231f20" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M 28 10 V 6 C 28 3 36 3 36 6 V 10" fill="none" stroke="#231f20" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="32" cy="16" r="1.5" fill="#231f20" />
+    </svg>
+  );
+}
+
 const ADMIN_NAV = [
   { key: "dashboard", icon: "📊", label: "Dashboard" },
   { key: "patients",  icon: "👥", label: "All Patients",  badge: "24" },
   { key: "register",  icon: "➕", label: "Register Patient" },
   { key: "chatbot",   icon: "🤖", label: "AI Assistant" },
-  { key: "medical",   icon: "🩻", label: "Medical Analysis" },
+  { key: "medical",   icon: <ClipboardLogoIcon />, label: "Medical Analysis" },
   { key: "schemes",   icon: "🏛️", label: "Govt Schemes" },
 ];
 
@@ -256,7 +280,7 @@ const PATIENT_NAV = [
   { key: "profile",  icon: "👤", label: "My Profile" },
   { key: "records",  icon: "📋", label: "Health Records" },
   { key: "chatbot",  icon: "🤖", label: "AI Health Guide" },
-  { key: "medical",  icon: "🩻", label: "Medical Analysis" },
+  { key: "medical",  icon: <ClipboardLogoIcon />, label: "Medical Analysis" },
   { key: "schemes",  icon: "🏛️", label: "Govt Scheme Suggestions" },
 ];
 
@@ -1636,7 +1660,10 @@ function MedicalAnalysis() {
       <div className="card card-ai mb-4">
         <div className="card-header">
           <div className="card-title">
-            🩻 Medical Analysis
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <ClipboardLogoIcon size={22} />
+              Medical Analysis
+            </span>
             <span className="ai-badge">✨ OCR + Claude AI</span>
           </div>
         </div>
