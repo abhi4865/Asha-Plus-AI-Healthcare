@@ -594,9 +594,6 @@ function AdminDashboard({ patients, user, onNav, onEditPatient, onViewPatient, o
           <div className="card-title">
             <span className="card-title-hi">मरीज की जानकारी</span>
           </div>
-          <button className="btn btn-gold btn-sm" onClick={() => onNav("chatbot")}>
-            Open AI Assistant
-          </button>
         </div>
         <div className="card-body">
           <PatientsTable
@@ -658,14 +655,13 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
               <th>Contact</th>
               <th>Location</th>
               <th>Disease</th>
-              <th>Registered</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                <td colSpan={8} style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
                   No patients found
                 </td>
               </tr>
@@ -700,7 +696,6 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
                       {p.diseases}
                     </span>
                   </td>
-                  <td className="text-xs text-muted">{p.registered}</td>
                   <td>
                     <div className="flex gap-2">
                       <button className="btn btn-outline-purple btn-sm" onClick={() => onEdit?.(p)}>Edit</button>
