@@ -40,22 +40,127 @@ const ADMIN_CREDS  = { email: "admin@ashacare.in", password: "admin123" };
 const PATIENT_CREDS = { email: "priya@email.com",   password: "patient123" };
 
 // ─── Mock visit / history records, keyed by patient ID ───────────────────────
+// `type`, `note`, `healthAlert` and `precaution` are bilingual (en/hi) so the
+// same record can be shown to the ASHA worker/admin and the patient in either
+// language. Vitals (bp/sugar/weight/temperature/pulse/spo2) are unit-bearing
+// strings, language-agnostic, shown as chips when present.
 const MOCK_HISTORY = {
   P001: [
-    { date: "2025-01-15", type: "Follow-up Checkup", worker: "Asha Devi (ASHA Worker)", note: "Blood sugar slightly elevated, advised diet control.", bp: "128/84", sugar: "142 mg/dL", weight: "61 kg" },
-    { date: "2024-12-02", type: "Diabetes Screening", worker: "Dr. Sunita Rao", note: "HbA1c 6.2 – pre-diabetic range, started on Metformin.", bp: "124/80", sugar: "150 mg/dL", weight: "62 kg" },
-    { date: "2024-11-10", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Initial registration, baseline vitals recorded.", bp: "120/80", sugar: "—", weight: "63 kg" },
+    {
+      id: "h-p001-1", date: "2025-01-15", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "Follow-up Checkup", hi: "अनुवर्ती जांच" },
+      note: {
+        en: "Blood sugar slightly elevated, advised diet control.",
+        hi: "रक्त शर्करा थोड़ी बढ़ी हुई पाई गई, आहार नियंत्रण की सलाह दी गई।",
+      },
+      healthAlert: {
+        en: "Blood sugar trending upward — monitor closely.",
+        hi: "रक्त शर्करा बढ़ने की प्रवृत्ति — बारीकी से निगरानी करें।",
+      },
+      precaution: {
+        en: "Limit sugar and refined carbs; recheck blood sugar after 2 weeks.",
+        hi: "चीनी और रिफाइंड कार्बोहाइड्रेट सीमित करें; 2 सप्ताह बाद रक्त शर्करा की दोबारा जांच कराएं।",
+      },
+      bp: "128/84", sugar: "142 mg/dL", weight: "61 kg", temperature: "", pulse: "", spo2: "",
+    },
+    {
+      id: "h-p001-2", date: "2024-12-02", worker: "Dr. Sunita Rao",
+      type: { en: "Diabetes Screening", hi: "मधुमेह जांच" },
+      note: {
+        en: "HbA1c 6.2 – pre-diabetic range, started on Metformin.",
+        hi: "HbA1c 6.2 – प्री-डायबिटिक रेंज में, मेटफॉर्मिन शुरू किया गया।",
+      },
+      healthAlert: {
+        en: "Pre-diabetic HbA1c level detected.",
+        hi: "प्री-डायबिटिक HbA1c स्तर पाया गया।",
+      },
+      precaution: {
+        en: "Take Metformin as prescribed; avoid sugary foods.",
+        hi: "निर्धारित अनुसार मेटफॉर्मिन लें; मीठे खाद्य पदार्थों से बचें।",
+      },
+      bp: "124/80", sugar: "150 mg/dL", weight: "62 kg", temperature: "", pulse: "", spo2: "",
+    },
+    {
+      id: "h-p001-3", date: "2024-11-10", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
+      note: {
+        en: "Initial registration, baseline vitals recorded.",
+        hi: "प्रारंभिक पंजीकरण, बेसलाइन वाइटल्स दर्ज किए गए।",
+      },
+      healthAlert: { en: "", hi: "" },
+      precaution: { en: "", hi: "" },
+      bp: "120/80", sugar: "—", weight: "63 kg", temperature: "98.4°F", pulse: "76 bpm", spo2: "98%",
+    },
   ],
   P002: [
-    { date: "2025-02-10", type: "BP Monitoring", worker: "Asha Devi (ASHA Worker)", note: "BP under control with current medication.", bp: "138/88", sugar: "—", weight: "78 kg" },
-    { date: "2024-12-01", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Diagnosed with hypertension, prescribed Amlodipine.", bp: "150/95", sugar: "—", weight: "79 kg" },
+    {
+      id: "h-p002-1", date: "2025-02-10", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "BP Monitoring", hi: "रक्तचाप निगरानी" },
+      note: {
+        en: "BP under control with current medication.",
+        hi: "वर्तमान दवा से रक्तचाप नियंत्रण में है।",
+      },
+      healthAlert: { en: "", hi: "" },
+      precaution: {
+        en: "Continue current medication; monitor BP weekly.",
+        hi: "वर्तमान दवा जारी रखें; साप्ताहिक रूप से रक्तचाप की निगरानी करें।",
+      },
+      bp: "138/88", sugar: "—", weight: "78 kg", temperature: "", pulse: "", spo2: "",
+    },
+    {
+      id: "h-p002-2", date: "2024-12-01", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
+      note: {
+        en: "Diagnosed with hypertension, prescribed Amlodipine.",
+        hi: "उच्च रक्तचाप का निदान किया गया, एम्लोडिपिन निर्धारित की गई।",
+      },
+      healthAlert: {
+        en: "High blood pressure detected at registration.",
+        hi: "पंजीकरण के समय उच्च रक्तचाप पाया गया।",
+      },
+      precaution: { en: "", hi: "" },
+      bp: "150/95", sugar: "—", weight: "79 kg", temperature: "", pulse: "88 bpm", spo2: "",
+    },
   ],
   P003: [
-    { date: "2025-03-05", type: "Asthma Review", worker: "Dr. Ravi Kumar", note: "Mild wheezing reported, inhaler technique reviewed.", bp: "118/76", sugar: "—", weight: "54 kg" },
-    { date: "2025-01-15", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "Asthma confirmed, salbutamol inhaler issued.", bp: "116/74", sugar: "—", weight: "55 kg" },
+    {
+      id: "h-p003-1", date: "2025-03-05", worker: "Dr. Ravi Kumar",
+      type: { en: "Asthma Review", hi: "अस्थमा समीक्षा" },
+      note: {
+        en: "Mild wheezing reported, inhaler technique reviewed.",
+        hi: "हल्की सांस फूलने की शिकायत, इन्हेलर तकनीक की समीक्षा की गई।",
+      },
+      healthAlert: { en: "", hi: "" },
+      precaution: {
+        en: "Continue inhaler use as directed; avoid known triggers.",
+        hi: "निर्देशानुसार इन्हेलर का उपयोग जारी रखें; ज्ञात ट्रिगर्स से बचें।",
+      },
+      bp: "118/76", sugar: "—", weight: "54 kg", temperature: "", pulse: "", spo2: "97%",
+    },
+    {
+      id: "h-p003-2", date: "2025-01-15", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
+      note: {
+        en: "Asthma confirmed, salbutamol inhaler issued.",
+        hi: "अस्थमा की पुष्टि हुई, सालबुटामोल इन्हेलर दिया गया।",
+      },
+      healthAlert: { en: "", hi: "" },
+      precaution: { en: "", hi: "" },
+      bp: "116/74", sugar: "—", weight: "55 kg", temperature: "", pulse: "", spo2: "",
+    },
   ],
   P004: [
-    { date: "2025-02-20", type: "Registration Checkup", worker: "Asha Devi (ASHA Worker)", note: "No existing conditions found, general health good.", bp: "118/78", sugar: "92 mg/dL", weight: "70 kg" },
+    {
+      id: "h-p004-1", date: "2025-02-20", worker: "Asha Devi (ASHA Worker)",
+      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
+      note: {
+        en: "No existing conditions found, general health good.",
+        hi: "कोई मौजूदा बीमारी नहीं पाई गई, सामान्य स्वास्थ्य अच्छा है।",
+      },
+      healthAlert: { en: "", hi: "" },
+      precaution: { en: "", hi: "" },
+      bp: "118/78", sugar: "92 mg/dL", weight: "70 kg", temperature: "98.6°F", pulse: "72 bpm", spo2: "99%",
+    },
   ],
 };
 
@@ -1033,50 +1138,18 @@ function ChatBot() {
 }
 
 // ─── Health Records ───────────────────────────────────────────────────────────
-function HealthRecords() {
+function HealthRecords({ user, history, setHistory }) {
+  const patient = MOCK_PATIENTS.find((p) => p.email === user?.email) || MOCK_PATIENTS[0];
+  const records = history[patient.id] || [];
+
   return (
     <div className="page-body">
-      <div className="card mb-4">
-        <div className="card-header">
-          <div className="card-title">📋 Health Records</div>
-          <span className="badge badge-gold">3 Records</span>
-        </div>
-        <div className="card-body">
-          {[
-            { date: "Jan 15, 2025", doctor: "Dr. Amit Jain", type: "General Checkup", note: "BP normal, advised exercise" },
-            { date: "Nov 10, 2024", doctor: "Dr. Sunita Rao", type: "Diabetes Screening", note: "HbA1c 6.2 – pre-diabetic range" },
-            { date: "Aug 05, 2024", doctor: "Dr. Ravi Kumar", type: "Eye Checkup", note: "No issues found" },
-          ].map((r, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "16px 0",
-                borderBottom: i < 2 ? "1px solid var(--border)" : "none",
-                display: "flex",
-                gap: 16,
-                alignItems: "flex-start",
-              }}
-            >
-              <div
-                style={{
-                  width: 44, height: 44, borderRadius: "var(--radius-md)",
-                  background: "var(--purple-soft)", display: "flex",
-                  alignItems: "center", justifyContent: "center",
-                  fontSize: 22, flexShrink: 0,
-                }}
-              >🩺</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, color: "var(--text-dark)" }}>{r.type}</div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0" }}>
-                  {r.doctor} · {r.date}
-                </div>
-                <div style={{ fontSize: 13, color: "var(--text-dark)" }}>{r.note}</div>
-              </div>
-              <button className="btn btn-outline-purple btn-sm">View</button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <PatientHistoryCard
+        patientId={patient.id}
+        records={records}
+        setHistory={setHistory}
+        isAdmin={false}
+      />
     </div>
   );
 }
@@ -2285,7 +2358,444 @@ function MedicalAnalysis() {
 }
 
 // ─── Patient Profile (Admin/ASHA view, with trackable history) ───────────────
-function PatientProfileView({ patient, history, onBack, onEdit }) {
+// ─── Patient History & Tracking — bilingual UI text ──────────────────────────
+const HISTORY_UI_TEXT = {
+  en: {
+    title: "📈 Patient History & Tracking",
+    addBtn: "➕ Add Checkup",
+    records: "Records",
+    empty: "No visit history recorded yet.",
+    emptyAdmin: ' — click "Add Checkup" to record one.',
+    edit: "✏️ Edit",
+    delete: "🗑️ Delete",
+    alert: "⚠️ Health Alert",
+    precaution: "💡 Precaution",
+    deleteTitle: "🗑️ Delete Checkup Record",
+    deleteBody: "Are you sure you want to delete this checkup record? This action cannot be undone.",
+    cancel: "Cancel",
+    confirmDelete: "Delete Record",
+  },
+  hi: {
+    title: "📈 रोगी इतिहास और ट्रैकिंग",
+    addBtn: "➕ नई जांच जोड़ें",
+    records: "रिकॉर्ड",
+    empty: "अभी तक कोई विज़िट इतिहास दर्ज नहीं है।",
+    emptyAdmin: ' — एक जोड़ने के लिए "नई जांच जोड़ें" पर क्लिक करें।',
+    edit: "✏️ संपादित करें",
+    delete: "🗑️ हटाएं",
+    alert: "⚠️ स्वास्थ्य चेतावनी",
+    precaution: "💡 सावधानी",
+    deleteTitle: "🗑️ जांच रिकॉर्ड हटाएं",
+    deleteBody: "क्या आप वाकई इस जांच रिकॉर्ड को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।",
+    cancel: "रद्द करें",
+    confirmDelete: "रिकॉर्ड हटाएं",
+  },
+};
+
+const VITAL_LABELS = {
+  bp:          { en: "BP",     hi: "बीपी" },
+  sugar:       { en: "Sugar",  hi: "शुगर" },
+  weight:      { en: "Weight", hi: "वज़न" },
+  temperature: { en: "Temp",   hi: "तापमान" },
+  pulse:       { en: "Pulse",  hi: "पल्स" },
+  spo2:        { en: "SpO2",   hi: "ऑक्सीजन" },
+};
+
+// Common ASHA / NHM visit categories, offered as a quick-pick in the form —
+// admin can still freely edit the bilingual text after picking one.
+const COMMON_VISIT_TYPES = [
+  { en: "Registration Checkup",        hi: "पंजीकरण जांच" },
+  { en: "Follow-up Checkup",           hi: "अनुवर्ती जांच" },
+  { en: "Routine Checkup",             hi: "नियमित जांच" },
+  { en: "Antenatal Checkup (ANC)",     hi: "प्रसवपूर्व जांच (ANC)" },
+  { en: "Postnatal Checkup (PNC)",     hi: "प्रसवोत्तर जांच (PNC)" },
+  { en: "Immunization Visit",          hi: "टीकाकरण विज़िट" },
+  { en: "Disease Screening",           hi: "रोग जांच" },
+  { en: "BP Monitoring",               hi: "रक्तचाप निगरानी" },
+  { en: "Diabetes Screening",          hi: "मधुमेह जांच" },
+  { en: "Home Visit",                  hi: "गृह भ्रमण" },
+];
+
+const BLANK_HISTORY_FORM = {
+  date: new Date().toISOString().slice(0, 10),
+  worker: "",
+  typeEn: "", typeHi: "",
+  noteEn: "", noteHi: "",
+  alertEn: "", alertHi: "",
+  precautionEn: "", precautionHi: "",
+  bp: "", sugar: "", weight: "", temperature: "", pulse: "", spo2: "",
+};
+
+function recordToForm(r) {
+  return {
+    date: r.date || new Date().toISOString().slice(0, 10),
+    worker: r.worker || "",
+    typeEn: r.type?.en || "", typeHi: r.type?.hi || "",
+    noteEn: r.note?.en || "", noteHi: r.note?.hi || "",
+    alertEn: r.healthAlert?.en || "", alertHi: r.healthAlert?.hi || "",
+    precautionEn: r.precaution?.en || "", precautionHi: r.precaution?.hi || "",
+    bp: r.bp || "", sugar: r.sugar || "", weight: r.weight || "",
+    temperature: r.temperature || "", pulse: r.pulse || "", spo2: r.spo2 || "",
+  };
+}
+
+function formToHistoryRecord(form, existingId) {
+  return {
+    id: existingId || `h-${Date.now()}`,
+    date: form.date,
+    worker: form.worker.trim(),
+    type: { en: form.typeEn.trim(), hi: form.typeHi.trim() },
+    note: { en: form.noteEn.trim(), hi: form.noteHi.trim() },
+    healthAlert: { en: form.alertEn.trim(), hi: form.alertHi.trim() },
+    precaution: { en: form.precautionEn.trim(), hi: form.precautionHi.trim() },
+    bp: form.bp.trim(), sugar: form.sugar.trim(), weight: form.weight.trim(),
+    temperature: form.temperature.trim(), pulse: form.pulse.trim(), spo2: form.spo2.trim(),
+  };
+}
+
+// ─── Add / Edit Checkup form modal (admin / ASHA worker only) ────────────────
+function HistoryFormModal({ mode, initial, onCancel, onSubmit }) {
+  const [form, setForm] = useState(() => (initial ? recordToForm(initial) : BLANK_HISTORY_FORM));
+  const [formLang, setFormLang] = useState("en");
+  const [error, setError] = useState("");
+
+  const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const applyPreset = (e) => {
+    const preset = COMMON_VISIT_TYPES.find((t) => t.en === e.target.value);
+    if (preset) setForm((f) => ({ ...f, typeEn: preset.en, typeHi: preset.hi }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.date || !form.worker.trim()) {
+      setError("Date and Doctor / ASHA Name are required.");
+      return;
+    }
+    if (!form.typeEn.trim() || !form.noteEn.trim()) {
+      setError("Visit Type and Reason / Notes (English) are required.");
+      return;
+    }
+    setError("");
+    onSubmit(formToHistoryRecord(form, initial?.id));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            {mode === "edit" ? "✏️ Edit Checkup Record" : "➕ Add New Checkup Record"}
+          </div>
+          <button className="modal-close" onClick={onCancel}>✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && <div className="form-error-banner">⚠️ {error}</div>}
+
+            <div className="form-grid mb-4">
+              <div className="form-group">
+                <label className="form-label">Date<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => set("date", e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Doctor / ASHA Name<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  value={form.worker}
+                  onChange={(e) => set("worker", e.target.value)}
+                  placeholder="e.g. Asha Devi (ASHA Worker) or Dr. Sunita Rao"
+                />
+              </div>
+            </div>
+
+            <div className="form-group mb-4">
+              <label className="form-label">Quick Pick Visit Type (optional)</label>
+              <select className="form-select" defaultValue="" onChange={applyPreset}>
+                <option value="">— Select a common visit type —</option>
+                {COMMON_VISIT_TYPES.map((t) => (
+                  <option key={t.en} value={t.en}>{t.en}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-section-title">📝 Visit Details</div>
+
+            <div className="btn-tabs lang-toggle-row">
+              <button type="button" className={`btn-tab ${formLang === "en" ? "active" : ""}`} onClick={() => setFormLang("en")}>
+                English
+              </button>
+              <button type="button" className={`btn-tab ${formLang === "hi" ? "active" : ""}`} onClick={() => setFormLang("hi")}>
+                हिंदी
+              </button>
+            </div>
+
+            {formLang === "en" ? (
+              <>
+                <div className="form-group mb-4">
+                  <label className="form-label">Visit Type (English)<span className="required">*</span></label>
+                  <input
+                    className="form-input"
+                    value={form.typeEn}
+                    onChange={(e) => set("typeEn", e.target.value)}
+                    placeholder="e.g. Follow-up Checkup"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Reason / Clinical Notes (English)<span className="required">*</span></label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.noteEn}
+                    onChange={(e) => set("noteEn", e.target.value)}
+                    placeholder="Reason for visit and observations"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">Health Alert (English, optional)</label>
+                  <textarea
+                    className="form-textarea"
+                    style={{ minHeight: 56 }}
+                    value={form.alertEn}
+                    onChange={(e) => set("alertEn", e.target.value)}
+                    placeholder="Anything that needs urgent attention"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Precaution / Advice (English, optional)</label>
+                  <textarea
+                    className="form-textarea"
+                    style={{ minHeight: 56 }}
+                    value={form.precautionEn}
+                    onChange={(e) => set("precautionEn", e.target.value)}
+                    placeholder="Advice given to the patient"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-group mb-4">
+                  <label className="form-label">विज़िट प्रकार (हिंदी)</label>
+                  <input
+                    className="form-input"
+                    value={form.typeHi}
+                    onChange={(e) => set("typeHi", e.target.value)}
+                    placeholder="जैसे अनुवर्ती जांच"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">कारण / टिप्पणी (हिंदी)</label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.noteHi}
+                    onChange={(e) => set("noteHi", e.target.value)}
+                    placeholder="विज़िट का कारण और अवलोकन"
+                  />
+                </div>
+                <div className="form-group mb-4">
+                  <label className="form-label">स्वास्थ्य चेतावनी (हिंदी, वैकल्पिक)</label>
+                  <textarea
+                    className="form-textarea"
+                    style={{ minHeight: 56 }}
+                    value={form.alertHi}
+                    onChange={(e) => set("alertHi", e.target.value)}
+                    placeholder="तुरंत ध्यान देने योग्य कोई बात"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">सावधानी / सलाह (हिंदी, वैकल्पिक)</label>
+                  <textarea
+                    className="form-textarea"
+                    style={{ minHeight: 56 }}
+                    value={form.precautionHi}
+                    onChange={(e) => set("precautionHi", e.target.value)}
+                    placeholder="रोगी को दी गई सलाह"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="form-section-title mt-4">🩺 Vitals</div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Blood Pressure</label>
+                <input className="form-input" value={form.bp} onChange={(e) => set("bp", e.target.value)} placeholder="e.g. 120/80" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Blood Sugar</label>
+                <input className="form-input" value={form.sugar} onChange={(e) => set("sugar", e.target.value)} placeholder="e.g. 110 mg/dL" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Weight</label>
+                <input className="form-input" value={form.weight} onChange={(e) => set("weight", e.target.value)} placeholder="e.g. 60 kg" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Temperature</label>
+                <input className="form-input" value={form.temperature} onChange={(e) => set("temperature", e.target.value)} placeholder="e.g. 98.6°F" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Pulse Rate</label>
+                <input className="form-input" value={form.pulse} onChange={(e) => set("pulse", e.target.value)} placeholder="e.g. 76 bpm" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">SpO2</label>
+                <input className="form-input" value={form.spo2} onChange={(e) => set("spo2", e.target.value)} placeholder="e.g. 98%" />
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline-purple" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn btn-gold">
+              {mode === "edit" ? "Update Record" : "Save Record"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Patient History & Tracking card ─────────────────────────────────────────
+// Reused by the admin/ASHA "Patient Profile" view (full CRUD) and the
+// patient's own "Health Records" page (read-only). `records` is the flat
+// array for ONE patient; CRUD writes go through `setHistory`, which holds
+// the full { [patientId]: records[] } map lifted at the App level so admin
+// edits are immediately reflected in the patient's own view.
+function PatientHistoryCard({ patientId, records, setHistory, isAdmin, toast }) {
+  const [lang, setLang] = useState("en");
+  const [formModal, setFormModal] = useState(null); // { mode: 'add' | 'edit', record } | null
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const T = HISTORY_UI_TEXT[lang];
+  const sorted = [...records].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const openAddForm  = () => setFormModal({ mode: "add", record: null });
+  const openEditForm = (record) => setFormModal({ mode: "edit", record });
+  const closeForm    = () => setFormModal(null);
+
+  const upsertHistory = (patientId, updater) =>
+    setHistory((prev) => ({ ...prev, [patientId]: updater(prev[patientId] || []) }));
+
+  const handleFormSubmit = (record) => {
+    if (formModal.mode === "edit") {
+      upsertHistory(patientId, (list) => list.map((r) => (r.id === record.id ? record : r)));
+      toast?.("Checkup record updated!", "success", record.type.en);
+    } else {
+      upsertHistory(patientId, (list) => [record, ...list]);
+      toast?.("Checkup record added!", "success", record.type.en);
+    }
+    setFormModal(null);
+  };
+
+  const requestDelete = (record) => setDeleteTarget(record);
+  const cancelDelete  = () => setDeleteTarget(null);
+  const confirmDeleteRecord = () => {
+    upsertHistory(patientId, (list) => list.filter((r) => r.id !== deleteTarget.id));
+    toast?.("Checkup record deleted", "success", deleteTarget.type.en);
+    setDeleteTarget(null);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+        <div className="card-title">{T.title}</div>
+        <div className="flex items-center gap-2" style={{ flexWrap: "wrap" }}>
+          <div className="btn-tabs btn-tabs-compact" title="Switch language / भाषा बदलें">
+            <button type="button" className={`btn-tab ${lang === "en" ? "active" : ""}`} onClick={() => setLang("en")}>EN</button>
+            <button type="button" className={`btn-tab ${lang === "hi" ? "active" : ""}`} onClick={() => setLang("hi")}>हिं</button>
+          </div>
+          <span className="badge badge-gold">{records.length} {T.records}</span>
+          {isAdmin && (
+            <button className="btn btn-gold btn-sm" onClick={openAddForm}>{T.addBtn}</button>
+          )}
+        </div>
+      </div>
+
+      <div className="card-body">
+        {sorted.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+            {T.empty}{isAdmin ? T.emptyAdmin : ""}
+          </div>
+        ) : (
+          sorted.map((r) => (
+            <div className="history-item" key={r.id}>
+              <div className="history-item-icon">🩺</div>
+              <div className="history-item-body">
+                <div className="history-item-top">
+                  <div>
+                    <div className="history-item-title">{r.type?.[lang] || r.type?.en}</div>
+                    <div className="history-item-meta">{r.worker} · {r.date}</div>
+                  </div>
+                  {isAdmin && (
+                    <div className="history-item-actions">
+                      <button className="btn btn-outline-purple btn-sm" onClick={() => openEditForm(r)}>{T.edit}</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => requestDelete(r)}>{T.delete}</button>
+                    </div>
+                  )}
+                </div>
+
+                {(r.note?.[lang] || r.note?.en) && (
+                  <div className="history-item-note">{r.note[lang] || r.note.en}</div>
+                )}
+
+                {(r.healthAlert?.[lang] || r.healthAlert?.en) && (
+                  <div className="health-alert-banner">{T.alert}: {r.healthAlert[lang] || r.healthAlert.en}</div>
+                )}
+                {(r.precaution?.[lang] || r.precaution?.en) && (
+                  <div className="precaution-banner">{T.precaution}: {r.precaution[lang] || r.precaution.en}</div>
+                )}
+
+                <div className="flex gap-2" style={{ flexWrap: "wrap", marginTop: 8 }}>
+                  {r.bp && <span className="badge badge-purple">{VITAL_LABELS.bp[lang]} {r.bp}</span>}
+                  {r.sugar && r.sugar !== "—" && <span className="badge badge-gold">{VITAL_LABELS.sugar[lang]} {r.sugar}</span>}
+                  {r.weight && <span className="badge badge-green">{VITAL_LABELS.weight[lang]} {r.weight}</span>}
+                  {r.temperature && <span className="badge badge-blue">{VITAL_LABELS.temperature[lang]} {r.temperature}</span>}
+                  {r.pulse && <span className="badge badge-purple">{VITAL_LABELS.pulse[lang]} {r.pulse}</span>}
+                  {r.spo2 && <span className="badge badge-teal">{VITAL_LABELS.spo2[lang]} {r.spo2}</span>}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Add / Edit checkup modal — admin / ASHA worker only */}
+      {formModal && (
+        <HistoryFormModal
+          mode={formModal.mode}
+          initial={formModal.record}
+          onCancel={closeForm}
+          onSubmit={handleFormSubmit}
+        />
+      )}
+
+      {/* Delete confirmation modal — admin / ASHA worker only */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">{T.deleteTitle}</div>
+              <button className="modal-close" onClick={cancelDelete}>✕</button>
+            </div>
+            <div className="modal-body">{T.deleteBody}</div>
+            <div className="modal-footer">
+              <button className="btn btn-outline-purple" onClick={cancelDelete}>{T.cancel}</button>
+              <button className="btn btn-danger" onClick={confirmDeleteRecord}>{T.confirmDelete}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatientProfileView({ patient, history, setHistory, isAdmin, toast, onBack, onEdit }) {
   if (!patient) {
     return (
       <div className="page-body">
@@ -2294,7 +2804,7 @@ function PatientProfileView({ patient, history, onBack, onEdit }) {
     );
   }
 
-  const records = history || [];
+  const records = history[patient.id] || [];
   const lastVisit = records[0]?.date || patient.registered;
 
   return (
@@ -2372,54 +2882,14 @@ function PatientProfileView({ patient, history, onBack, onEdit }) {
         </div>
       </div>
 
-      {/* Visit / Tracking History */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">📈 Patient History &amp; Tracking</div>
-          <span className="badge badge-gold">{records.length} Record{records.length !== 1 ? "s" : ""}</span>
-        </div>
-        <div className="card-body">
-          {records.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-              No visit history recorded yet.
-            </div>
-          ) : (
-            records.map((r, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "16px 0",
-                  borderBottom: i < records.length - 1 ? "1px solid var(--border)" : "none",
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "flex-start",
-                }}
-              >
-                <div
-                  style={{
-                    width: 44, height: 44, borderRadius: "var(--radius-md)",
-                    background: "var(--purple-soft)", display: "flex",
-                    alignItems: "center", justifyContent: "center",
-                    fontSize: 22, flexShrink: 0,
-                  }}
-                >🩺</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, color: "var(--text-dark)" }}>{r.type}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "2px 0" }}>
-                    {r.worker} · {r.date}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-dark)", marginBottom: 6 }}>{r.note}</div>
-                  <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
-                    {r.bp && <span className="badge badge-purple">BP {r.bp}</span>}
-                    {r.sugar && r.sugar !== "—" && <span className="badge badge-gold">Sugar {r.sugar}</span>}
-                    {r.weight && <span className="badge badge-green">Weight {r.weight}</span>}
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+      {/* Visit / Tracking History — full CRUD for admin/ASHA, bilingual EN/HI */}
+      <PatientHistoryCard
+        patientId={patient.id}
+        records={records}
+        setHistory={setHistory}
+        isAdmin={isAdmin}
+        toast={toast}
+      />
     </div>
   );
 }
@@ -2444,6 +2914,7 @@ export default function App() {
   const [page,       setPage]     = useState("dashboard");
   const [patients,   setPatients] = useState(MOCK_PATIENTS);
   const [schemes,    setSchemes] = useState(GOVT_SCHEMES); // shared across admin (CRUD) & patient (view-only)
+  const [history,    setHistory] = useState(MOCK_HISTORY); // { [patientId]: record[] } — shared across admin (CRUD) & patient (view-only)
   const [mobileMenu, setMobile]  = useState(false);
   const [collapsed,  setCollapsed] = useState(false);
   const [activePatient, setActivePatient] = useState(null); // patient being viewed/edited
@@ -2527,7 +2998,10 @@ export default function App() {
       if (page === "patient-profile") return (
         <PatientProfileView
           patient={patients.find((p) => p.id === activePatient?.id) || activePatient}
-          history={MOCK_HISTORY[activePatient?.id] || []}
+          history={history}
+          setHistory={setHistory}
+          isAdmin
+          toast={toast}
           onBack={() => setPage(returnPage)}
           onEdit={openEdit}
         />
@@ -2539,7 +3013,9 @@ export default function App() {
       );
     } else {
       if (page === "profile")  return <PatientDashboard user={user} />;
-      if (page === "records")  return <HealthRecords />;
+      if (page === "records")  return (
+        <HealthRecords user={user} history={history} setHistory={setHistory} />
+      );
       if (page === "chatbot")  return <ChatBot />;
       if (page === "medical")  return <MedicalAnalysis />;
       if (page === "schemes")  return (
