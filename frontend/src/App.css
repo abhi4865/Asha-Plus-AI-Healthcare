@@ -1867,6 +1867,76 @@ body {
   justify-content: flex-end;
 }
 
+/* Wider variant for content-heavy modals (e.g. scheme eligibility / documents) */
+.modal-wide { max-width: 680px; }
+
+/* ============================================
+   GOVT SCHEME CARDS — Eligibility / Document modal
+   ============================================ */
+.scheme-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.scheme-card-actions .btn { width: 100%; }
+
+.lang-toggle-row { margin-bottom: 18px; }
+
+.scheme-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.scheme-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--purple-bg);
+  color: var(--purple-deep);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--purple-light);
+  transition: var(--transition);
+}
+.scheme-link-pill:hover {
+  background: var(--purple-soft);
+  transform: translateY(-1px);
+}
+
+.scheme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+}
+
+.scheme-list-item {
+  position: relative;
+  padding: 12px 16px 12px 38px;
+  background: var(--off-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-dark);
+}
+
+.scheme-list-item::before {
+  content: '✓';
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  color: var(--purple-primary);
+  font-weight: 700;
+}
+
 /* ============================================
    MOBILE RESPONSIVE
    ============================================ */
