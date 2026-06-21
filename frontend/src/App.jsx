@@ -39,6 +39,22 @@ const MOCK_PATIENTS = [
 const ADMIN_CREDS  = { email: "admin@ashacare.in", password: "admin123" };
 const PATIENT_CREDS = { email: "priya@email.com",   password: "patient123" };
 
+// ─── ASHA Workers (location-scoped accounts, added/managed by Admin only) ────
+// Each worker can log in and gets the full ASHA/Admin dashboard, but every
+// patient list is filtered down to `location` (matched against patient.village).
+const MOCK_ASHA_WORKERS = [
+  {
+    id: "ASHA-001", name: "Asha Devi", email: "asha.noida@ashacare.in",
+    password: "asha123", mobile: "9876512340", location: "Noida",
+    registered: "2024-10-01",
+  },
+  {
+    id: "ASHA-002", name: "Geeta Kumari", email: "geeta.ghaziabad@ashacare.in",
+    password: "asha123", mobile: "9876512341", location: "Ghaziabad",
+    registered: "2024-11-05",
+  },
+];
+
 // ─── Mock visit / history records, keyed by patient ID ───────────────────────
 // `type`, `note`, `healthAlert` and `precaution` are bilingual (en/hi) so the
 // same record can be shown to the ASHA worker/admin and the patient in either
@@ -198,7 +214,7 @@ function useToast() {
 }
 
 // ─── Auth Page ────────────────────────────────────────────────────────────────
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, ashaWorkers = [] }) {
   const [role, setRole]       = useState("admin");
   const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
@@ -212,11 +228,28 @@ function AuthPage({ onLogin }) {
     setError("");
     setLoading(true);
     setTimeout(() => {
-      const creds = role === "admin" ? ADMIN_CREDS : PATIENT_CREDS;
-      if (email === creds.email && password === creds.password) {
-        onLogin({ role, email, name: role === "admin" ? "ASHA Worker" : "Priya Sharma" });
+      const emailTrim = email.trim();
+      if (role === "admin") {
+        if (emailTrim === ADMIN_CREDS.email && password === ADMIN_CREDS.password) {
+          onLogin({ role: "admin", email: emailTrim, name: "Admin" });
+        } else {
+          setError("Invalid email or password. Please try again.");
+        }
+      } else if (role === "asha") {
+        const worker = ashaWorkers.find(
+          (w) => w.email.toLowerCase() === emailTrim.toLowerCase() && w.password === password
+        );
+        if (worker) {
+          onLogin({ role: "asha", email: worker.email, name: worker.name, location: worker.location, ashaId: worker.id });
+        } else {
+          setError("Invalid email or password. Please try again.");
+        }
       } else {
-        setError("Invalid email or password. Please try again.");
+        if (emailTrim === PATIENT_CREDS.email && password === PATIENT_CREDS.password) {
+          onLogin({ role: "patient", email: emailTrim, name: "Priya Sharma" });
+        } else {
+          setError("Invalid email or password. Please try again.");
+        }
       }
       setLoading(false);
     }, 900);
@@ -256,7 +289,8 @@ function AuthPage({ onLogin }) {
                 value={role}
                 onChange={(e) => { setRole(e.target.value); setError(""); }}
               >
-                <option value="admin">Login as ASHA Worker</option>
+                <option value="admin">Login as Admin</option>
+                <option value="asha">Login as ASHA Worker</option>
                 <option value="patient">Login as Patient</option>
               </select>
               <span className="login-select-arrow">▾</span>
@@ -312,7 +346,10 @@ function AuthPage({ onLogin }) {
             {showCreds && (
               <div className="login-demo-creds">
                 <div style={{ marginBottom: 6 }}>
-                  <b>ASHA Worker:</b> admin@ashacare.in / admin123
+                  <b>Admin:</b> admin@ashacare.in / admin123
+                </div>
+                <div style={{ marginBottom: 6 }}>
+                  <b>ASHA Worker (Noida):</b> asha.noida@ashacare.in / asha123
                 </div>
                 <div>
                   <b>Patient:</b> priya@email.com / patient123
@@ -390,7 +427,7 @@ const PATIENT_NAV = [
 ];
 
 function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse }) {
-  const nav = user.role === "admin" ? ADMIN_NAV : PATIENT_NAV;
+  const nav = (user.role === "admin" || user.role === "asha") ? ADMIN_NAV : PATIENT_NAV;
 
   return (
     <>
@@ -467,7 +504,11 @@ function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, o
                   {user.name}
                 </div>
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
-                  {user.role === "admin" ? "ASHA Worker" : "Patient"}
+                  {user.role === "admin"
+                    ? "Admin"
+                    : user.role === "asha"
+                      ? `ASHA Worker • ${user.location}`
+                      : "Patient"}
                 </div>
               </div>
             )}
@@ -494,6 +535,9 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle }) {
           🔔
           <span className="notif-dot" />
         </div>
+        {user.role === "asha" && (
+          <span className="badge badge-blue">📍 {user.location}</span>
+        )}
         <div className="welcome-text">
           {user.email}
         </div>
@@ -504,7 +548,7 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle }) {
 }
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
-function AdminDashboard({ patients, onNav, onEditPatient, onViewPatient, onDeletePatient }) {
+function AdminDashboard({ patients, user, onNav, onEditPatient, onViewPatient, onDeletePatient }) {
   const male   = patients.filter((p) => p.gender === "Male").length;
   const female = patients.filter((p) => p.gender === "Female").length;
 
@@ -537,6 +581,11 @@ function AdminDashboard({ patients, onNav, onEditPatient, onViewPatient, onDelet
         <button className="btn btn-gold btn-sm" onClick={() => onNav("register")}>
           ➕ Add Patient
         </button>
+        {user?.role === "admin" && (
+          <button className="btn btn-outline-purple btn-sm" onClick={() => onNav("manage-asha")}>
+            ⚕️ Manage ASHA
+          </button>
+        )}
       </div>
 
       {/* Patients Card */}
@@ -669,7 +718,7 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
 }
 
 // ─── Patient Registration / Edit Form ──────────────────────────────────────────
-function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel }) {
+function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultVillage = "" }) {
   const [listening, setListening] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [form, setForm]           = useState(() =>
@@ -684,7 +733,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel }) {
         }
       : {
           fullName: "", age: "", dob: "", gender: "", mobile: "", email: "",
-          weight: "", height: "", blood: "", address: "", village: "",
+          weight: "", height: "", blood: "", address: "", village: defaultVillage,
           state: "Uttar Pradesh", pin: "", diseases: "", allergies: "",
           medications: "", emergencyName: "", emergencyNumber: "",
         }
@@ -2894,6 +2943,339 @@ function PatientProfileView({ patient, history, setHistory, isAdmin, toast, onBa
   );
 }
 
+// ─── ASHA Worker form helpers ────────────────────────────────────────────────
+const BLANK_ASHA_FORM = { name: "", email: "", password: "", mobile: "", location: "" };
+
+function ashaToForm(worker) {
+  return {
+    name: worker.name || "",
+    email: worker.email || "",
+    password: worker.password || "",
+    mobile: worker.mobile || "",
+    location: worker.location || "",
+  };
+}
+
+function formToAsha(form, existingId, existingRegistered) {
+  return {
+    id: existingId || `ASHA-${Date.now()}`,
+    name: form.name.trim(),
+    email: form.email.trim(),
+    password: form.password.trim(),
+    mobile: form.mobile.trim(),
+    location: form.location.trim(),
+    registered: existingRegistered || new Date().toISOString().slice(0, 10),
+  };
+}
+
+// ─── Add / Edit ASHA Worker modal (Admin only) ───────────────────────────────
+function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
+  const [form, setForm]       = useState(() => (initial ? ashaToForm(initial) : BLANK_ASHA_FORM));
+  const [error, setError]     = useState("");
+  const [showPass, setShowPass] = useState(false);
+
+  const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim() || !form.password.trim() || !form.mobile.trim() || !form.location.trim()) {
+      setError("Name, email, password, mobile and location are all required.");
+      return;
+    }
+    const emailLower = form.email.trim().toLowerCase();
+    if (emailLower === ADMIN_CREDS.email.toLowerCase() || emailLower === PATIENT_CREDS.email.toLowerCase()) {
+      setError("This email is already used by another account.");
+      return;
+    }
+    const clash = existingWorkers.some(
+      (w) => w.email.toLowerCase() === emailLower && w.id !== initial?.id
+    );
+    if (clash) {
+      setError("Another ASHA worker already uses this email.");
+      return;
+    }
+    setError("");
+    onSubmit(formToAsha(form, initial?.id, initial?.registered));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            {mode === "edit" ? "✏️ Edit ASHA Worker" : "➕ Add New ASHA Worker"}
+          </div>
+          <button className="modal-close" onClick={onCancel}>✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && <div className="form-error-banner">⚠️ {error}</div>}
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Full Name<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  value={form.name}
+                  onChange={(e) => set("name", e.target.value)}
+                  placeholder="e.g. Sunita Devi"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Mobile Number<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  type="tel"
+                  value={form.mobile}
+                  onChange={(e) => set("mobile", e.target.value)}
+                  placeholder="10-digit number"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (used to login)<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => set("email", e.target.value)}
+                  placeholder="worker@ashacare.in"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password<span className="required">*</span></label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    className="form-input has-action"
+                    type={showPass ? "text" : "password"}
+                    value={form.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    placeholder="Set a login password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass((p) => !p)}
+                    style={{
+                      position: "absolute", right: 12, top: "50%",
+                      transform: "translateY(-50%)", background: "none",
+                      border: "none", cursor: "pointer", fontSize: 15,
+                      color: "rgba(109,40,217,0.5)",
+                    }}
+                  >
+                    {showPass ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+              <div className="form-group full">
+                <label className="form-label">Assigned Location (Village / City)<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  value={form.location}
+                  onChange={(e) => set("location", e.target.value)}
+                  placeholder="e.g. Noida"
+                />
+                <span className="textarea-hint">
+                  This ASHA worker will only see and manage patients registered under this location.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline-purple" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn btn-gold">
+              {mode === "edit" ? "Update ASHA Worker" : "Add ASHA Worker"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Manage ASHA Dashboard (Admin only) ──────────────────────────────────────
+// Admin adds ASHA workers tied to a location (e.g. Noida, Ghaziabad). Each
+// worker then logs in with role "asha" and gets the same dashboard/capabilities
+// as Admin, except this page — only the one Admin account can manage ASHA.
+function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
+  const [formModal, setFormModal]     = useState(null); // { mode: 'add' | 'edit', worker } | null
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [q, setQ] = useState("");
+
+  const openAddForm  = () => setFormModal({ mode: "add", worker: null });
+  const openEditForm = (worker) => setFormModal({ mode: "edit", worker });
+  const closeForm    = () => setFormModal(null);
+
+  const handleFormSubmit = (worker) => {
+    if (formModal.mode === "edit") {
+      setAshaWorkers((prev) => prev.map((w) => (w.id === worker.id ? worker : w)));
+      toast?.("ASHA worker updated successfully!", "success", `${worker.name} • ${worker.location}`);
+    } else {
+      setAshaWorkers((prev) => [...prev, worker]);
+      toast?.("ASHA worker added successfully!", "success", `${worker.name} • ${worker.location}`);
+    }
+    setFormModal(null);
+  };
+
+  const requestDelete = (worker) => setDeleteTarget(worker);
+  const cancelDelete  = () => setDeleteTarget(null);
+  const confirmDeleteWorker = () => {
+    setAshaWorkers((prev) => prev.filter((w) => w.id !== deleteTarget.id));
+    toast?.("ASHA worker removed", "success", `${deleteTarget.name} (${deleteTarget.location})`);
+    setDeleteTarget(null);
+  };
+
+  const patientsFor = (location) =>
+    patients.filter(
+      (p) => (p.village || "").trim().toLowerCase() === (location || "").trim().toLowerCase()
+    ).length;
+
+  const query = q.trim().toLowerCase();
+  const filtered = query
+    ? ashaWorkers.filter(
+        (w) => w.name.toLowerCase().includes(query) || w.location.toLowerCase().includes(query)
+      )
+    : ashaWorkers;
+
+  const locationsCovered = new Set(ashaWorkers.map((w) => w.location.trim().toLowerCase())).size;
+
+  return (
+    <div className="page-body">
+      {/* Back / Add actions */}
+      <div className="flex items-center gap-3 mb-4" style={{ justifyContent: "space-between" }}>
+        <button className="btn btn-outline-purple btn-sm" onClick={onBack}>← Back to Dashboard</button>
+        <button className="btn btn-gold btn-sm" onClick={openAddForm}>➕ Add ASHA Worker</button>
+      </div>
+
+      {/* Stat Cards */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-icon">⚕️</div>
+          <div className="stat-label">Total ASHA Workers</div>
+          <div className="stat-value">{ashaWorkers.length}</div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-icon">📍</div>
+          <div className="stat-label">Locations Covered</div>
+          <div className="stat-value">{locationsCovered}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-icon">👥</div>
+          <div className="stat-label">Total Patients</div>
+          <div className="stat-value">{patients.length}</div>
+        </div>
+      </div>
+
+      {/* ASHA Workers Card */}
+      <div className="card card-ai">
+        <div className="card-header">
+          <div className="card-title">
+            <span className="card-title-hi">आशा कार्यकर्ता प्रबंधन</span>
+          </div>
+        </div>
+        <div className="card-body">
+          <div className="search-bar">
+            <div className="search-input-wrapper">
+              <input
+                className="search-input"
+                type="text"
+                autoComplete="off"
+                placeholder="🔍  Search ASHA workers by name or location…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ASHA Worker</th>
+                  <th>ID</th>
+                  <th>Location</th>
+                  <th>Contact</th>
+                  <th>Patients in Area</th>
+                  <th>Added On</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                      {ashaWorkers.length === 0
+                        ? 'No ASHA workers added yet — click "Add ASHA Worker" to create one.'
+                        : "No ASHA workers found"}
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((w) => (
+                    <tr key={w.id}>
+                      <td>
+                        <div className="patient-cell">
+                          <div className="patient-avatar">{w.name[0]}</div>
+                          <div>
+                            <div className="patient-name">{w.name}</div>
+                            <div className="patient-id">{w.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td><span className="badge badge-purple">{w.id}</span></td>
+                      <td><span className="badge badge-blue">📍 {w.location}</span></td>
+                      <td className="text-sm">{w.mobile}</td>
+                      <td><span className="badge badge-green">{patientsFor(w.location)} patients</span></td>
+                      <td className="text-xs text-muted">{w.registered}</td>
+                      <td>
+                        <div className="flex gap-2">
+                          <button className="btn btn-outline-purple btn-sm" onClick={() => openEditForm(w)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => requestDelete(w)}>Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Add / Edit ASHA worker modal */}
+      {formModal && (
+        <AshaFormModal
+          mode={formModal.mode}
+          initial={formModal.worker}
+          existingWorkers={ashaWorkers}
+          onCancel={closeForm}
+          onSubmit={handleFormSubmit}
+        />
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">🗑️ Remove ASHA Worker</div>
+              <button className="modal-close" onClick={cancelDelete}>✕</button>
+            </div>
+            <div className="modal-body">
+              Are you sure you want to remove <strong>{deleteTarget.name}</strong> ({deleteTarget.location})?
+              They will no longer be able to log in, and this location will need a new ASHA worker assigned.
+              This action cannot be undone.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline-purple" onClick={cancelDelete}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDeleteWorker}>Remove Worker</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page Title Map ───────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   dashboard: "Dashboard",
@@ -2906,6 +3288,7 @@ const PAGE_TITLES = {
   schemes:   "Govt Scheme Suggestions",
   "patient-profile": "Patient Profile",
   "edit-patient":    "Edit Patient",
+  "manage-asha":     "Manage ASHA Workers",
 };
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
@@ -2913,6 +3296,7 @@ export default function App() {
   const [user,       setUser]     = useState(null);
   const [page,       setPage]     = useState("dashboard");
   const [patients,   setPatients] = useState(MOCK_PATIENTS);
+  const [ashaWorkers, setAshaWorkers] = useState(MOCK_ASHA_WORKERS); // managed by Admin only
   const [schemes,    setSchemes] = useState(GOVT_SCHEMES); // shared across admin (CRUD) & patient (view-only)
   const [history,    setHistory] = useState(MOCK_HISTORY); // { [patientId]: record[] } — shared across admin (CRUD) & patient (view-only)
   const [mobileMenu, setMobile]  = useState(false);
@@ -2922,7 +3306,7 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState(null); // patient pending delete confirmation
   const { toasts, add: toast, dismiss } = useToast();
 
-  const login  = (u) => { setUser(u); setPage(u.role === "admin" ? "dashboard" : "profile"); };
+  const login  = (u) => { setUser(u); setPage(u.role === "patient" ? "profile" : "dashboard"); };
   const logout = () => { setUser(null); setPage("dashboard"); setCollapsed(false); };
   const handleNav = (key) => { setPage(key); setMobile(false); };
 
@@ -2951,20 +3335,37 @@ export default function App() {
 
   if (!user) return (
     <>
-      <AuthPage onLogin={login} />
+      <AuthPage onLogin={login} ashaWorkers={ashaWorkers} />
       <Toast toasts={toasts} dismiss={dismiss} />
     </>
   );
 
+  // ASHA workers only ever see/manage patients registered under their assigned location.
+  const visiblePatients = user.role === "asha"
+    ? patients.filter(
+        (p) => (p.village || "").trim().toLowerCase() === (user.location || "").trim().toLowerCase()
+      )
+    : patients;
+
   const renderPage = () => {
-    if (user.role === "admin") {
+    if (user.role === "admin" || user.role === "asha") {
       if (page === "dashboard") return (
         <AdminDashboard
-          patients={patients}
+          patients={visiblePatients}
+          user={user}
           onNav={handleNav}
           onEditPatient={openEdit}
           onViewPatient={openProfile}
           onDeletePatient={requestDelete}
+        />
+      );
+      if (page === "manage-asha" && user.role === "admin") return (
+        <ManageAsha
+          ashaWorkers={ashaWorkers}
+          setAshaWorkers={setAshaWorkers}
+          patients={patients}
+          toast={toast}
+          onBack={() => setPage("dashboard")}
         />
       );
       if (page === "patients")  return (
@@ -2973,7 +3374,7 @@ export default function App() {
             <div className="card-header"><div className="card-title">👥 All Patients</div></div>
             <div className="card-body">
               <PatientsTable
-                patients={patients}
+                patients={visiblePatients}
                 onEdit={openEdit}
                 onView={openProfile}
                 onDelete={requestDelete}
@@ -2983,7 +3384,13 @@ export default function App() {
         </div>
       );
       if (page === "register")  return (
-        <RegisterPatient key="new" onNav={handleNav} toast={toast} onSave={addNewPatient} />
+        <RegisterPatient
+          key="new"
+          onNav={handleNav}
+          toast={toast}
+          onSave={addNewPatient}
+          defaultVillage={user.role === "asha" ? user.location : ""}
+        />
       );
       if (page === "edit-patient") return (
         <RegisterPatient
@@ -2997,7 +3404,7 @@ export default function App() {
       );
       if (page === "patient-profile") return (
         <PatientProfileView
-          patient={patients.find((p) => p.id === activePatient?.id) || activePatient}
+          patient={visiblePatients.find((p) => p.id === activePatient?.id) || activePatient}
           history={history}
           setHistory={setHistory}
           isAdmin
