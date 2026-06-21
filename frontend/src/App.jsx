@@ -713,9 +713,19 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
 }
 
 // ─── Patient Registration / Edit Form ──────────────────────────────────────────
+// OCR upload ceiling — matches the limit already used for the Tesseract.js
+// pipeline in Medical Analysis (see MedicalUploadCard below). Tesseract.js runs
+// entirely client-side in the browser; 8 MB comfortably covers a full-resolution
+// phone photo of an Aadhaar/health card while keeping in-browser OCR responsive.
+const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024; // 8 MB
+
 function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultVillage = "" }) {
   const [listening, setListening] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [ocrFile, setOcrFile]     = useState(null);
+  const [ocrPreview, setOcrPreview] = useState(null);
+  const [ocrDragOver, setOcrDragOver] = useState(false);
+  const [ocrError, setOcrError]   = useState("");
   const [form, setForm]           = useState(() =>
     editPatient
       ? {
@@ -756,7 +766,31 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
     rec.start();
   };
 
+  const acceptOcrFile = (f) => {
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      setOcrError("Please upload an image file (JPG or PNG).");
+      return;
+    }
+    if (f.size > MAX_OCR_FILE_SIZE) {
+      setOcrError("That file is larger than 8 MB. Please upload a smaller photo.");
+      return;
+    }
+    if (ocrPreview) URL.revokeObjectURL(ocrPreview);
+    setOcrError("");
+    setOcrFile(f);
+    setOcrPreview(URL.createObjectURL(f));
+  };
+
+  const resetOcrFile = () => {
+    if (ocrPreview) URL.revokeObjectURL(ocrPreview);
+    setOcrFile(null);
+    setOcrPreview(null);
+    setOcrError("");
+  };
+
   const handleOCR = () => {
+    if (!ocrFile) return;
     setUploading(true);
     setTimeout(() => {
       setForm((f) => ({
@@ -839,26 +873,67 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
           <span className="ai-badge">✨ AI Powered</span>
         </div>
         <div className="card-body">
-          <div
-            className={`upload-zone ${uploading ? "dragover" : ""}`}
-            onClick={handleOCR}
-          >
-            {uploading ? (
-              <>
-                <div className="upload-icon">⏳</div>
-                <div className="upload-title">Scanning document…</div>
-                <div className="upload-sub">Extracting patient information with AI</div>
-              </>
-            ) : (
-              <>
-                <div className="upload-icon">📷</div>
-                <div className="upload-title">Upload Aadhaar / Health Card</div>
-                <div className="upload-sub">
-                  Click to scan and auto-fill patient details using OCR
+          {!ocrFile ? (
+            <label
+              className={`upload-zone ${ocrDragOver ? "dragover" : ""}`}
+              style={{ display: "block" }}
+              onDragOver={(e) => { e.preventDefault(); setOcrDragOver(true); }}
+              onDragLeave={() => setOcrDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOcrDragOver(false);
+                acceptOcrFile(e.dataTransfer.files?.[0]);
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => acceptOcrFile(e.target.files?.[0])}
+              />
+              <div className="upload-icon">📷</div>
+              <div className="upload-title">Upload Aadhaar / Health Card</div>
+              <div className="upload-sub">
+                Click to browse or drag a photo here · JPG or PNG, up to 8 MB
+              </div>
+            </label>
+          ) : (
+            <div className="medical-upload-active">
+              <div className="medical-preview-row">
+                <img src={ocrPreview} alt="Uploaded document" className="medical-preview-thumb" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: "var(--text-dark)" }} className="truncate">{ocrFile.name}</div>
+                  <div className="text-sm text-muted">{(ocrFile.size / 1024).toFixed(0)} KB</div>
+                  {!uploading && (
+                    <div className="flex gap-2 mt-2" style={{ flexWrap: "wrap" }}>
+                      <button type="button" className="btn btn-gold btn-sm" onClick={handleOCR}>
+                        🔍 Scan Document
+                      </button>
+                      <button type="button" className="btn btn-outline-purple btn-sm" onClick={resetOcrFile}>
+                        Choose Different Image
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+
+              {uploading && (
+                <div className="medical-progress">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className="spinner"
+                      style={{ borderColor: "rgba(124,58,237,0.25)", borderTopColor: "var(--purple-primary)", width: 16, height: 16 }}
+                    />
+                    <span className="text-sm" style={{ color: "var(--purple-deep)", fontWeight: 600 }}>
+                      Scanning document &amp; extracting patient information…
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {ocrError && <div className="error-banner mt-2">⚠️ {ocrError}</div>}
         </div>
       </div>
       )}
