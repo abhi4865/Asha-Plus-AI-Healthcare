@@ -1087,6 +1087,7 @@ function HealthRecords() {
 // instantly inside the modal while standing in front of a patient.
 const GOVT_SCHEMES = [
   {
+    id: "scheme-01",
     icon: "🏥", name: "Ayushman Bharat (PM-JAY)",
     desc: "Free hospitalisation cover up to ₹5 lakh per family per year at empanelled hospitals.",
     eligibilitySummary: "Families listed under SECC database / state extension criteria",
@@ -1128,6 +1129,7 @@ const GOVT_SCHEMES = [
     },
   },
   {
+    id: "scheme-02",
     icon: "🤰", name: "Janani Suraksha Yojana (JSY)",
     desc: "Cash assistance for institutional delivery to reduce maternal and infant mortality.",
     eligibilitySummary: "Pregnant women, especially BPL households in low-performing states",
@@ -1167,6 +1169,7 @@ const GOVT_SCHEMES = [
     },
   },
   {
+    id: "scheme-03",
     icon: "🍼", name: "Janani Shishu Suraksha Karyakram (JSSK)",
     desc: "Free delivery, C-section and newborn care, including drugs, diet and transport.",
     eligibilitySummary: "All pregnant women delivering in public health institutions",
@@ -1204,6 +1207,7 @@ const GOVT_SCHEMES = [
     },
   },
   {
+    id: "scheme-04",
     icon: "👶", name: "Pradhan Mantri Matru Vandana Yojana (PMMVY)",
     desc: "₹5,000 cash incentive for the first living child to support nutrition and rest.",
     eligibilitySummary: "Pregnant and lactating mothers, first child only",
@@ -1245,6 +1249,7 @@ const GOVT_SCHEMES = [
     },
   },
   {
+    id: "scheme-05",
     icon: "🧒", name: "Rashtriya Bal Swasthya Karyakram (RBSK)",
     desc: "Free child health screening and early intervention for birth defects and deficiencies.",
     eligibilitySummary: "Children aged 0–18 years in the community",
@@ -1284,6 +1289,7 @@ const GOVT_SCHEMES = [
     },
   },
   {
+    id: "scheme-06",
     icon: "💉", name: "Mission Indradhanush",
     desc: "Free immunisation drive covering vaccine-preventable childhood diseases.",
     eligibilitySummary: "Unvaccinated or partially vaccinated children and pregnant women",
@@ -1320,10 +1326,235 @@ const GOVT_SCHEMES = [
   },
 ];
 
-function GovtSchemes() {
+// ─── Scheme form <-> data helpers ────────────────────────────────────────────
+// The admin form edits bilingual eligibility/document lists as plain
+// newline-separated textareas; these helpers convert to/from the array shape
+// the rest of the app (and the read-only modal) expects.
+const BLANK_SCHEME_FORM = {
+  icon: "🏥",
+  name: "",
+  desc: "",
+  eligibilitySummary: "",
+  officialLink: "",
+  detailLink: "",
+  eligibilityEn: "",
+  eligibilityHi: "",
+  documentsEn: "",
+  documentsHi: "",
+};
+
+const linesToList = (str) => str.split("\n").map((s) => s.trim()).filter(Boolean);
+const listToLines = (arr) => (arr || []).join("\n");
+
+function schemeToForm(scheme) {
+  return {
+    icon: scheme.icon || "🏥",
+    name: scheme.name || "",
+    desc: scheme.desc || "",
+    eligibilitySummary: scheme.eligibilitySummary || "",
+    officialLink: scheme.officialLink || "",
+    detailLink: scheme.detailLink || "",
+    eligibilityEn: listToLines(scheme.eligibility?.en),
+    eligibilityHi: listToLines(scheme.eligibility?.hi),
+    documentsEn: listToLines(scheme.documents?.en),
+    documentsHi: listToLines(scheme.documents?.hi),
+  };
+}
+
+function formToScheme(form, existingId) {
+  return {
+    id: existingId || `scheme-${Date.now()}`,
+    icon: form.icon.trim() || "🏥",
+    name: form.name.trim(),
+    desc: form.desc.trim(),
+    eligibilitySummary: form.eligibilitySummary.trim(),
+    officialLink: form.officialLink.trim(),
+    detailLink: form.detailLink.trim(),
+    eligibility: { en: linesToList(form.eligibilityEn), hi: linesToList(form.eligibilityHi) },
+    documents: { en: linesToList(form.documentsEn), hi: linesToList(form.documentsHi) },
+  };
+}
+
+// ─── Add / Edit Scheme modal (admin only) ────────────────────────────────────
+function SchemeFormModal({ mode, initial, onCancel, onSubmit }) {
+  const [form, setForm] = useState(() => (initial ? schemeToForm(initial) : BLANK_SCHEME_FORM));
+  const [formLang, setFormLang] = useState("en");
+  const [error, setError] = useState("");
+
+  const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.desc.trim() || !form.eligibilitySummary.trim()) {
+      setError("Scheme name, description and eligibility summary are required.");
+      return;
+    }
+    if (!linesToList(form.eligibilityEn).length || !linesToList(form.documentsEn).length) {
+      setError("Add at least one English eligibility point and one English document.");
+      return;
+    }
+    setError("");
+    onSubmit(formToScheme(form, initial?.id));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">
+            {mode === "edit" ? "✏️ Edit Government Scheme" : "➕ Add New Government Scheme"}
+          </div>
+          <button className="modal-close" onClick={onCancel}>✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && <div className="form-error-banner">⚠️ {error}</div>}
+
+            <div className="scheme-icon-name-row">
+              <div className="form-group">
+                <label className="form-label">Icon</label>
+                <input
+                  className="form-input scheme-icon-input"
+                  value={form.icon}
+                  onChange={(e) => set("icon", e.target.value)}
+                  maxLength={4}
+                  placeholder="🏥"
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Scheme Name<span className="required">*</span></label>
+                <input
+                  className="form-input"
+                  value={form.name}
+                  onChange={(e) => set("name", e.target.value)}
+                  placeholder="e.g. Ayushman Bharat (PM-JAY)"
+                />
+              </div>
+            </div>
+
+            <div className="form-group mb-4">
+              <label className="form-label">Short Description<span className="required">*</span></label>
+              <textarea
+                className="form-textarea"
+                style={{ minHeight: 56 }}
+                value={form.desc}
+                onChange={(e) => set("desc", e.target.value)}
+                placeholder="One-line summary shown on the scheme card"
+              />
+            </div>
+
+            <div className="form-group mb-4">
+              <label className="form-label">Eligibility Summary (shown on card)<span className="required">*</span></label>
+              <input
+                className="form-input"
+                value={form.eligibilitySummary}
+                onChange={(e) => set("eligibilitySummary", e.target.value)}
+                placeholder="e.g. Families listed under SECC database"
+              />
+            </div>
+
+            <div className="form-grid mb-4">
+              <div className="form-group">
+                <label className="form-label">Official Website Link</label>
+                <input
+                  className="form-input"
+                  type="url"
+                  value={form.officialLink}
+                  onChange={(e) => set("officialLink", e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Detailed Eligibility Criteria Link</label>
+                <input
+                  className="form-input"
+                  type="url"
+                  value={form.detailLink}
+                  onChange={(e) => set("detailLink", e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+            </div>
+
+            <div className="form-section-title">📋 Eligibility &amp; Documents Content</div>
+
+            <div className="btn-tabs lang-toggle-row">
+              <button type="button" className={`btn-tab ${formLang === "en" ? "active" : ""}`} onClick={() => setFormLang("en")}>
+                English
+              </button>
+              <button type="button" className={`btn-tab ${formLang === "hi" ? "active" : ""}`} onClick={() => setFormLang("hi")}>
+                हिंदी
+              </button>
+            </div>
+
+            {formLang === "en" ? (
+              <>
+                <div className="form-group mb-4">
+                  <label className="form-label">Eligibility Points (English)<span className="required">*</span></label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.eligibilityEn}
+                    onChange={(e) => set("eligibilityEn", e.target.value)}
+                    placeholder={"All pregnant women delivering in public health institutions\nNo income limit or BPL condition"}
+                  />
+                  <span className="textarea-hint">One point per line</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Documents Required (English)<span className="required">*</span></label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.documentsEn}
+                    onChange={(e) => set("documentsEn", e.target.value)}
+                    placeholder={"Aadhaar card or government-approved photo ID\nRation card"}
+                  />
+                  <span className="textarea-hint">One document per line</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-group mb-4">
+                  <label className="form-label">पात्रता बिंदु (हिंदी)</label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.eligibilityHi}
+                    onChange={(e) => set("eligibilityHi", e.target.value)}
+                    placeholder={"सरकारी स्वास्थ्य सुविधाओं में प्रसव कराने वाली सभी गर्भवती महिलाएं"}
+                  />
+                  <span className="textarea-hint">प्रति पंक्ति एक बिंदु</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">आवश्यक दस्तावेज़ (हिंदी)</label>
+                  <textarea
+                    className="form-textarea"
+                    value={form.documentsHi}
+                    onChange={(e) => set("documentsHi", e.target.value)}
+                    placeholder={"आधार कार्ड\nराशन कार्ड"}
+                  />
+                  <span className="textarea-hint">प्रति पंक्ति एक दस्तावेज़</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" className="btn btn-outline-purple" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn btn-gold">
+              {mode === "edit" ? "Update Scheme" : "Save Scheme"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function GovtSchemes({ schemes, setSchemes, isAdmin, toast }) {
   // modal = { scheme, type: 'eligibility' | 'documents' } | null
   const [modal, setModal] = useState(null);
   const [lang, setLang] = useState("en");
+  const [formModal, setFormModal] = useState(null); // { mode: 'add' | 'edit', scheme } | null
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const openModal = (scheme, type) => {
     setLang("en");
@@ -1334,21 +1565,53 @@ function GovtSchemes() {
   const isEligibility = modal?.type === "eligibility";
   const listData = modal ? (isEligibility ? modal.scheme.eligibility : modal.scheme.documents)[lang] : [];
 
+  const openAddForm  = () => setFormModal({ mode: "add", scheme: null });
+  const openEditForm = (scheme) => setFormModal({ mode: "edit", scheme });
+  const closeForm    = () => setFormModal(null);
+
+  const handleFormSubmit = (scheme) => {
+    if (formModal.mode === "edit") {
+      setSchemes((prev) => prev.map((s) => (s.id === scheme.id ? scheme : s)));
+      toast?.("Scheme updated successfully!", "success", scheme.name);
+    } else {
+      setSchemes((prev) => [...prev, scheme]);
+      toast?.("Scheme added successfully!", "success", scheme.name);
+    }
+    setFormModal(null);
+  };
+
+  const requestDelete = (scheme) => setDeleteTarget(scheme);
+  const cancelDelete  = () => setDeleteTarget(null);
+  const confirmDeleteScheme = () => {
+    setSchemes((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+    toast?.("Scheme deleted", "success", deleteTarget.name);
+    setDeleteTarget(null);
+  };
+
   return (
     <div className="page-body">
       <div className="card card-ai mb-4">
         <div className="card-header">
           <div className="card-title">🏛️ Govt Scheme Suggestions</div>
-          <span className="badge badge-gold">{GOVT_SCHEMES.length} Schemes</span>
+          <div className="flex items-center gap-2">
+            <span className="badge badge-gold">{schemes.length} Schemes</span>
+            {isAdmin && (
+              <button className="btn btn-gold btn-sm" onClick={openAddForm}>
+                ➕ Add New Scheme
+              </button>
+            )}
+          </div>
         </div>
         <div className="card-body" style={{ color: "var(--text-muted)", fontSize: 13, padding: "16px 24px" }}>
-          National health schemes your patients may be eligible for — share these during home visits.
+          {isAdmin
+            ? "National health schemes your patients may be eligible for — add, edit or remove schemes for everyone to see."
+            : "National health schemes you may be eligible for — tap a card to see eligibility and required documents."}
         </div>
       </div>
 
       <div className="stats-grid">
-        {GOVT_SCHEMES.map((s) => (
-          <div key={s.name} className="stat-card">
+        {schemes.map((s) => (
+          <div key={s.id} className="stat-card">
             <div style={{ fontSize: 26 }}>{s.icon}</div>
             <div style={{ fontWeight: 700, color: "var(--text-dark)", fontSize: 14, lineHeight: 1.3 }}>
               {s.name}
@@ -1371,11 +1634,27 @@ function GovtSchemes() {
                 📄 Document Required
               </button>
             </div>
+            {isAdmin && (
+              <div className="scheme-card-admin-row">
+                <button className="btn btn-outline-purple btn-sm" onClick={() => openEditForm(s)}>
+                  ✏️ Edit
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => requestDelete(s)}>
+                  🗑️ Delete
+                </button>
+              </div>
+            )}
           </div>
         ))}
+
+        {schemes.length === 0 && (
+          <div className="text-muted text-sm" style={{ gridColumn: "1 / -1", textAlign: "center", padding: "30px 0" }}>
+            No schemes added yet{isAdmin ? ' — click "Add New Scheme" to create one.' : "."}
+          </div>
+        )}
       </div>
 
-      {/* Eligibility / Document Required modal — bilingual (EN / HI) */}
+      {/* Eligibility / Document Required modal — bilingual (EN / HI), view-only */}
       {modal && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
@@ -1427,6 +1706,36 @@ function GovtSchemes() {
               <button className="btn btn-outline-purple" onClick={closeModal}>
                 {lang === "en" ? "Close" : "बंद करें"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit scheme modal — admin only */}
+      {formModal && (
+        <SchemeFormModal
+          mode={formModal.mode}
+          initial={formModal.scheme}
+          onCancel={closeForm}
+          onSubmit={handleFormSubmit}
+        />
+      )}
+
+      {/* Delete confirmation modal — admin only */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={cancelDelete}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">🗑️ Delete Scheme</div>
+              <button className="modal-close" onClick={cancelDelete}>✕</button>
+            </div>
+            <div className="modal-body">
+              Are you sure you want to delete <strong>{deleteTarget.name}</strong>?
+              This will remove it from both the admin and patient views. This action cannot be undone.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline-purple" onClick={cancelDelete}>Cancel</button>
+              <button className="btn btn-danger" onClick={confirmDeleteScheme}>Delete Scheme</button>
             </div>
           </div>
         </div>
@@ -2134,6 +2443,7 @@ export default function App() {
   const [user,       setUser]     = useState(null);
   const [page,       setPage]     = useState("dashboard");
   const [patients,   setPatients] = useState(MOCK_PATIENTS);
+  const [schemes,    setSchemes] = useState(GOVT_SCHEMES); // shared across admin (CRUD) & patient (view-only)
   const [mobileMenu, setMobile]  = useState(false);
   const [collapsed,  setCollapsed] = useState(false);
   const [activePatient, setActivePatient] = useState(null); // patient being viewed/edited
@@ -2224,13 +2534,17 @@ export default function App() {
       );
       if (page === "chatbot")   return <ChatBot />;
       if (page === "medical")   return <MedicalAnalysis />;
-      if (page === "schemes")   return <GovtSchemes />;
+      if (page === "schemes")   return (
+        <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin toast={toast} />
+      );
     } else {
       if (page === "profile")  return <PatientDashboard user={user} />;
       if (page === "records")  return <HealthRecords />;
       if (page === "chatbot")  return <ChatBot />;
       if (page === "medical")  return <MedicalAnalysis />;
-      if (page === "schemes")  return <GovtSchemes />;
+      if (page === "schemes")  return (
+        <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin={false} toast={toast} />
+      );
     }
     return null;
   };

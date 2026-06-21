@@ -1937,6 +1937,47 @@ body {
   font-weight: 700;
 }
 
+/* Admin-only Edit / Delete row on each scheme card */
+.scheme-card-admin-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.scheme-card-admin-row .btn { flex: 1; }
+
+/* Add / Edit scheme form — icon + name side by side */
+.scheme-icon-name-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.scheme-icon-input {
+  width: 64px;
+  text-align: center;
+  font-size: 20px;
+  padding: 11px 8px;
+}
+
+/* Small helper text under bilingual textareas in the scheme form */
+.textarea-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Inline validation banner inside modals */
+.form-error-banner {
+  background: #FEE2E2;
+  color: #991B1B;
+  border: 1px solid #FCA5A5;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
 /* ============================================
    MOBILE RESPONSIVE
    ============================================ */
