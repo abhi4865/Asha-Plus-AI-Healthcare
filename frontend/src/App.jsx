@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react";
+import { useState, useEffect, createContext, useContext, useRef } from "react";
 import "./App.css";
 
 // ─── Login illustration (base64 so the component stays self-contained) ──────
@@ -38,6 +38,45 @@ const MOCK_PATIENTS = [
 
 const ADMIN_CREDS  = { email: "admin@ashacare.in", password: "admin123" };
 const PATIENT_CREDS = { email: "priya@email.com",   password: "patient123" };
+
+// ─── Admin Profile (security-relevant fields, lifted into App state) ────────
+// In a real backend, `password` would never be stored/compared client-side in
+// plaintext — this would be a bcrypt/argon2 hash check on the server. Kept as
+// a plain value here only because this mock has no backend.
+const DEFAULT_ADMIN_PROFILE = {
+  name: "Admin",
+  email: ADMIN_CREDS.email,
+  password: ADMIN_CREDS.password,
+  securityQuestion: "",
+  securityAnswer: "",
+  failedAttempts: 0,
+  lockUntil: null,            // epoch ms while locked out
+  lastPasswordChange: null,   // ISO date string
+  lastLogin: null,            // ISO date string
+};
+
+const SECURITY_QUESTIONS = [
+  "What was the name of your first school?",
+  "What is your mother's maiden name?",
+  "What was the name of your first pet?",
+  "What city were you born in?",
+  "Which ASHA center did you start your career at?",
+];
+
+const LOCKOUT_MAX_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS  = 15 * 60 * 1000; // 15 minutes
+
+function passwordStrength(pw) {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (score <= 1) return { label: "Weak", cls: "weak", pct: 25 };
+  if (score <= 3) return { label: "Medium", cls: "medium", pct: 60 };
+  return { label: "Strong", cls: "strong", pct: 100 };
+}
 
 // ─── ASHA Workers (location-scoped accounts, added/managed by Admin only) ────
 // Each worker can log in and gets the full ASHA/Admin dashboard, but every
@@ -214,7 +253,7 @@ function useToast() {
 }
 
 // ─── Auth Page ────────────────────────────────────────────────────────────────
-function AuthPage({ onLogin, ashaWorkers = [] }) {
+function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) {
   const [role, setRole]       = useState("admin");
   const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
@@ -230,10 +269,30 @@ function AuthPage({ onLogin, ashaWorkers = [] }) {
     setTimeout(() => {
       const emailTrim = email.trim();
       if (role === "admin") {
-        if (emailTrim === ADMIN_CREDS.email && password === ADMIN_CREDS.password) {
-          onLogin({ role: "admin", email: emailTrim, name: "Admin" });
+        const now = Date.now();
+        if (adminProfile.lockUntil && adminProfile.lockUntil > now) {
+          const mins = Math.ceil((adminProfile.lockUntil - now) / 60000);
+          setError(`Account temporarily locked due to multiple failed attempts. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`);
+          setLoading(false);
+          return;
+        }
+        if (emailTrim.toLowerCase() === adminProfile.email.toLowerCase() && password === adminProfile.password) {
+          setAdminProfile((p) => ({ ...p, failedAttempts: 0, lockUntil: null, lastLogin: new Date().toISOString() }));
+          onLogin({ role: "admin", email: adminProfile.email, name: adminProfile.name });
         } else {
-          setError("Invalid email or password. Please try again.");
+          setAdminProfile((p) => {
+            const attempts = (p.failedAttempts || 0) + 1;
+            if (attempts >= LOCKOUT_MAX_ATTEMPTS) {
+              return { ...p, failedAttempts: 0, lockUntil: Date.now() + LOCKOUT_DURATION_MS };
+            }
+            return { ...p, failedAttempts: attempts };
+          });
+          const remaining = LOCKOUT_MAX_ATTEMPTS - ((adminProfile.failedAttempts || 0) + 1);
+          setError(
+            remaining > 0
+              ? `Invalid email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} left before temporary lockout.`
+              : "Too many failed attempts. Account locked for 15 minutes."
+          );
         }
       } else if (role === "asha") {
         const worker = ashaWorkers.find(
@@ -411,7 +470,7 @@ function ClipboardLogoIcon({ size = 20, style }) {
 
 const ADMIN_NAV = [
   { key: "dashboard", icon: "📊", label: "Dashboard" },
-  { key: "patients",  icon: "👥", label: "All Patients",  badge: "24" },
+  { key: "patients",  icon: "👥", label: "All Patients" },
   { key: "register",  icon: "➕", label: "Register Patient" },
   { key: "chatbot",   icon: "🤖", label: "AI Assistant" },
   { key: "medical",   icon: <ClipboardLogoIcon />, label: "Medical Analysis" },
@@ -426,8 +485,11 @@ const PATIENT_NAV = [
   { key: "schemes",  icon: "🏛️", label: "Govt Scheme Suggestions" },
 ];
 
-function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse }) {
-  const nav = (user.role === "admin" || user.role === "asha") ? ADMIN_NAV : PATIENT_NAV;
+function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse, patientCount }) {
+  const isStaff = user.role === "admin" || user.role === "asha";
+  const nav = isStaff
+    ? ADMIN_NAV.map((item) => item.key === "patients" ? { ...item, badge: String(patientCount) } : item)
+    : PATIENT_NAV;
 
   return (
     <>
@@ -520,7 +582,7 @@ function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, o
 }
 
 // ─── Top Bar ─────────────────────────────────────────────────────────────────
-function TopBar({ user, pageTitle, onLogout, onMenuToggle }) {
+function TopBar({ user, pageTitle, onLogout, onMenuToggle, onNav }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
@@ -538,12 +600,264 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle }) {
         {user.role === "asha" && (
           <span className="badge badge-blue">📍 {user.location}</span>
         )}
-        <div className="welcome-text">
-          {user.email}
-        </div>
+        {user.role === "admin" ? (
+          <button
+            type="button"
+            className="welcome-text welcome-link"
+            onClick={() => onNav && onNav("manage-admin")}
+            title="Manage admin profile & security"
+          >
+            👤 {user.email}
+          </button>
+        ) : (
+          <div className="welcome-text">{user.email}</div>
+        )}
         <button className="btn-signout" onClick={onLogout}>Sign Out</button>
       </div>
     </header>
+  );
+}
+
+// ─── Manage Admin Profile (name, password, security question, account safety) ─
+function ManageAdminProfile({ adminProfile, setAdminProfile, onBack, toast, onLogout, onNameSaved }) {
+  const [name, setName] = useState(adminProfile.name);
+
+  const [curPw, setCurPw]   = useState("");
+  const [newPw, setNewPw]   = useState("");
+  const [confPw, setConfPw] = useState("");
+  const [showCur, setShowCur] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [pwError, setPwError] = useState("");
+
+  const [secQ, setSecQ] = useState(adminProfile.securityQuestion || SECURITY_QUESTIONS[0]);
+  const [secA, setSecA] = useState("");
+  const [secCurPw, setSecCurPw] = useState("");
+  const [secError, setSecError] = useState("");
+
+  const strength = newPw ? passwordStrength(newPw) : null;
+
+  const saveName = () => {
+    const trimmed = name.trim();
+    if (!trimmed) { toast("Name cannot be empty", "error"); return; }
+    setAdminProfile((p) => ({ ...p, name: trimmed }));
+    onNameSaved && onNameSaved(trimmed);
+    toast("Profile updated", "success", "Display name changed successfully");
+  };
+
+  const submitPasswordChange = (e) => {
+    e.preventDefault();
+    setPwError("");
+    if (curPw !== adminProfile.password) {
+      setPwError("Current password is incorrect.");
+      return;
+    }
+    if (newPw.length < 8) {
+      setPwError("New password must be at least 8 characters long.");
+      return;
+    }
+    if (!(/[a-z]/.test(newPw) && /[A-Z]/.test(newPw) && /\d/.test(newPw))) {
+      setPwError("Password should include upper-case, lower-case letters and a number.");
+      return;
+    }
+    if (newPw === curPw) {
+      setPwError("New password must be different from your current password.");
+      return;
+    }
+    if (newPw !== confPw) {
+      setPwError("New password and confirmation do not match.");
+      return;
+    }
+    setAdminProfile((p) => ({
+      ...p,
+      password: newPw,
+      lastPasswordChange: new Date().toISOString(),
+      failedAttempts: 0,
+      lockUntil: null,
+    }));
+    setCurPw(""); setNewPw(""); setConfPw("");
+    toast("Password changed", "success", "Use your new password the next time you sign in.");
+  };
+
+  const submitSecurityQuestion = (e) => {
+    e.preventDefault();
+    setSecError("");
+    if (secCurPw !== adminProfile.password) {
+      setSecError("Please confirm your current password to update the security question.");
+      return;
+    }
+    if (!secA.trim() || secA.trim().length < 3) {
+      setSecError("Security answer must be at least 3 characters.");
+      return;
+    }
+    setAdminProfile((p) => ({ ...p, securityQuestion: secQ, securityAnswer: secA.trim() }));
+    setSecCurPw(""); setSecA("");
+    toast("Security question saved", "success", "This will be used to verify your identity if you ever lose access.");
+  };
+
+  const fmt = (iso) => {
+    if (!iso) return "Never";
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  };
+
+  return (
+    <div className="page-body">
+      <div className="card card-ai" style={{ marginBottom: 20 }}>
+        <div className="card-header">
+          <div className="card-title">👤 Manage Admin Profile</div>
+          <button className="btn btn-outline-purple btn-sm" onClick={onBack}>← Back to Dashboard</button>
+        </div>
+        <div className="card-body">
+          <div className="form-section">
+            <div className="form-section-title">🪪 Basic Information</div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Display Name</label>
+                <input className="form-input" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email (login id)</label>
+                <input className="form-input" value={adminProfile.email} disabled
+                  style={{ background: "#F3F4F6", cursor: "not-allowed", color: "#6B7280" }} />
+                <span className="form-hint">Login email is fixed for this account and can't be changed here.</span>
+              </div>
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <button className="btn btn-gold btn-sm" onClick={saveName}>Save Name</button>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">🛡️ Account Security Overview</div>
+            <div className="form-grid">
+              <div className="form-group">
+                <span className="form-label">Last Login</span>
+                <span style={{ fontSize: 14, color: "#374151", fontWeight: 600 }}>{fmt(adminProfile.lastLogin)}</span>
+              </div>
+              <div className="form-group">
+                <span className="form-label">Last Password Change</span>
+                <span style={{ fontSize: 14, color: "#374151", fontWeight: 600 }}>{fmt(adminProfile.lastPasswordChange)}</span>
+              </div>
+              <div className="form-group">
+                <span className="form-label">Security Question</span>
+                <span className="badge" style={{ background: adminProfile.securityQuestion ? "#D1FAE5" : "#FEE2E2", color: adminProfile.securityQuestion ? "#065F46" : "#991B1B" }}>
+                  {adminProfile.securityQuestion ? "Configured" : "Not set"}
+                </span>
+              </div>
+              <div className="form-group">
+                <span className="form-label">Failed Login Attempts</span>
+                <span style={{ fontSize: 14, color: "#374151", fontWeight: 600 }}>
+                  {adminProfile.failedAttempts || 0} / {LOCKOUT_MAX_ATTEMPTS} {adminProfile.lockUntil && adminProfile.lockUntil > Date.now() ? " — 🔒 Currently locked" : ""}
+                </span>
+              </div>
+            </div>
+            <div className="form-hint" style={{ marginTop: 10 }}>
+              For your protection, the account is automatically locked for 15 minutes after {LOCKOUT_MAX_ATTEMPTS} consecutive
+              failed login attempts. This slows down brute-force and password-guessing attacks.
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">🔑 Change Password</div>
+            <form onSubmit={submitPasswordChange}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-label">Current Password</label>
+                  <div className="input-wrapper">
+                    <input
+                      className="form-input has-action"
+                      type={showCur ? "text" : "password"}
+                      value={curPw}
+                      onChange={(e) => setCurPw(e.target.value)}
+                      autoComplete="current-password"
+                      required
+                    />
+                    <button type="button" className="input-action" onClick={() => setShowCur((p) => !p)}>
+                      {showCur ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">New Password</label>
+                  <div className="input-wrapper">
+                    <input
+                      className="form-input has-action"
+                      type={showNew ? "text" : "password"}
+                      value={newPw}
+                      onChange={(e) => setNewPw(e.target.value)}
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button type="button" className="input-action" onClick={() => setShowNew((p) => !p)}>
+                      {showNew ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                  {strength && (
+                    <div className="pw-meter">
+                      <div className={`pw-meter-fill ${strength.cls}`} style={{ width: `${strength.pct}%` }} />
+                      <span className={`pw-meter-label ${strength.cls}`}>{strength.label}</span>
+                    </div>
+                  )}
+                  <span className="form-hint">At least 8 characters, mixing upper/lower-case letters and a number. Add a symbol for extra strength.</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Confirm New Password</label>
+                  <input
+                    className="form-input"
+                    type={showNew ? "text" : "password"}
+                    value={confPw}
+                    onChange={(e) => setConfPw(e.target.value)}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+              </div>
+              {pwError && <div className="form-error" style={{ marginTop: 10 }}>{pwError}</div>}
+              <div style={{ marginTop: 14 }}>
+                <button className="btn btn-gold btn-sm" type="submit">Update Password</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="form-section">
+            <div className="form-section-title">❓ Security Question (used for account recovery)</div>
+            <form onSubmit={submitSecurityQuestion}>
+              <div className="form-grid">
+                <div className="form-group full">
+                  <label className="form-label">Choose a Question</label>
+                  <select className="form-select" value={secQ} onChange={(e) => setSecQ(e.target.value)}>
+                    {SECURITY_QUESTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Your Answer</label>
+                  <input className="form-input" value={secA} onChange={(e) => setSecA(e.target.value)} placeholder="Answer (case-insensitive)" required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Confirm Current Password</label>
+                  <input className="form-input" type="password" value={secCurPw} onChange={(e) => setSecCurPw(e.target.value)} required autoComplete="current-password" />
+                </div>
+              </div>
+              {secError && <div className="form-error" style={{ marginTop: 10 }}>{secError}</div>}
+              <div className="form-hint" style={{ marginTop: 6 }}>
+                We never display your saved answer back to you, and it is only used to verify your identity — never as a substitute login method.
+              </div>
+              <div style={{ marginTop: 14 }}>
+                <button className="btn btn-outline-purple btn-sm" type="submit">Save Security Question</button>
+              </div>
+            </form>
+          </div>
+
+          <div className="form-section" style={{ marginBottom: 0 }}>
+            <div className="form-section-title">🚪 Session</div>
+            <div className="form-hint" style={{ marginBottom: 10 }}>
+              If you suspect unauthorized access to this account, sign out immediately and change your password from a trusted device.
+            </div>
+            <button className="btn btn-danger btn-sm" onClick={onLogout}>Sign Out This Session</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1141,6 +1455,42 @@ function ChatBot() {
   ]);
   const [input, setInput]   = useState("");
   const [loading, setLoad]  = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(true);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { setVoiceSupported(false); return; }
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.lang = "en-IN"; // understands Hindi/English mix reasonably well in most browsers
+    rec.onresult = (e) => {
+      const transcript = Array.from(e.results).map((r) => r[0].transcript).join("");
+      setInput(transcript);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    return () => { try { rec.stop(); } catch {} };
+  }, []);
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) return;
+    if (listening) {
+      recognitionRef.current.stop();
+      setListening(false);
+    } else {
+      setInput("");
+      try {
+        recognitionRef.current.start();
+        setListening(true);
+      } catch {
+        setListening(false);
+      }
+    }
+  };
 
   const sendMsg = async () => {
     if (!input.trim()) return;
@@ -1219,11 +1569,21 @@ function ChatBot() {
             <div className="chatbot-input-area">
               <input
                 className="chatbot-input"
-                placeholder="Ask a health question in English or Hindi…"
+                placeholder={listening ? "🎙️ Listening… speak now" : "Ask a health question in English or Hindi…"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendMsg()}
               />
+              {voiceSupported && (
+                <button
+                  type="button"
+                  className={`voice-btn ${listening ? "listening" : ""}`}
+                  onClick={toggleVoice}
+                  title={listening ? "Stop listening" : "Ask by voice"}
+                >
+                  {listening ? "⏹️" : "🎤"}
+                </button>
+              )}
               <button className="btn btn-gold btn-sm" onClick={sendMsg} disabled={loading}>
                 Send ➤
               </button>
@@ -3359,6 +3719,7 @@ const PAGE_TITLES = {
   "patient-profile": "Patient Profile",
   "edit-patient":    "Edit Patient",
   "manage-asha":     "Manage ASHA Workers",
+  "manage-admin":    "Manage Admin Profile",
 };
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
@@ -3367,6 +3728,7 @@ export default function App() {
   const [page,       setPage]     = useState("dashboard");
   const [patients,   setPatients] = useState(MOCK_PATIENTS);
   const [ashaWorkers, setAshaWorkers] = useState(MOCK_ASHA_WORKERS); // managed by Admin only
+  const [adminProfile, setAdminProfile] = useState(DEFAULT_ADMIN_PROFILE); // admin's own name/password/security Q
   const [schemes,    setSchemes] = useState(GOVT_SCHEMES); // shared across admin (CRUD) & patient (view-only)
   const [history,    setHistory] = useState(MOCK_HISTORY); // { [patientId]: record[] } — shared across admin (CRUD) & patient (view-only)
   const [mobileMenu, setMobile]  = useState(false);
@@ -3405,7 +3767,7 @@ export default function App() {
 
   if (!user) return (
     <>
-      <AuthPage onLogin={login} ashaWorkers={ashaWorkers} />
+      <AuthPage onLogin={login} ashaWorkers={ashaWorkers} adminProfile={adminProfile} setAdminProfile={setAdminProfile} />
       <Toast toasts={toasts} dismiss={dismiss} />
     </>
   );
@@ -3427,6 +3789,16 @@ export default function App() {
           onEditPatient={openEdit}
           onViewPatient={openProfile}
           onDeletePatient={requestDelete}
+        />
+      );
+      if (page === "manage-admin" && user.role === "admin") return (
+        <ManageAdminProfile
+          adminProfile={adminProfile}
+          setAdminProfile={setAdminProfile}
+          toast={toast}
+          onBack={() => setPage("dashboard")}
+          onLogout={logout}
+          onNameSaved={(n) => setUser((u) => ({ ...u, name: n }))}
         />
       );
       if (page === "manage-asha" && user.role === "admin") return (
@@ -3513,6 +3885,7 @@ export default function App() {
           onOverlayClick={() => setMobile(false)}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((p) => !p)}
+          patientCount={visiblePatients.length}
         />
         <div
           className={`main-content${collapsed ? " sidebar-collapsed-content" : ""}`}
@@ -3522,6 +3895,7 @@ export default function App() {
             pageTitle={PAGE_TITLES[page] || "Asha Care"}
             onLogout={logout}
             onMenuToggle={() => setMobile((p) => !p)}
+            onNav={handleNav}
           />
           {renderPage()}
         </div>

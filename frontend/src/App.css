@@ -319,6 +319,46 @@ body {
   color: var(--purple-deep);
 }
 
+.welcome-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  transition: var(--transition);
+}
+.welcome-link:hover {
+  background: var(--purple-soft);
+  text-decoration: underline;
+}
+
+/* Password strength meter */
+.pw-meter {
+  position: relative;
+  height: 8px;
+  background: #E5E7EB;
+  border-radius: 999px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.pw-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+.pw-meter-fill.weak   { background: #EF4444; }
+.pw-meter-fill.medium { background: #F59E0B; }
+.pw-meter-fill.strong { background: #10B981; }
+.pw-meter-label {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.pw-meter-label.weak   { color: #DC2626; }
+.pw-meter-label.medium { color: #B45309; }
+.pw-meter-label.strong { color: #047857; }
+
 /* Notification Bell */
 .notif-btn {
   width: 40px;
