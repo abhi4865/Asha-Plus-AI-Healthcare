@@ -260,7 +260,16 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [showPass, setShowP]  = useState(false);
-  const [showCreds, setShowCreds] = useState(false);
+  const [showForgotMsg, setShowForgotMsg] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  const [regName, setRegName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [regShowPass, setRegShowPass] = useState(false);
+  const [regLoading, setRegLoading] = useState(false);
+  const [regStatus, setRegStatus] = useState("");
+  const [regError, setRegError] = useState("");
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -314,6 +323,32 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
     }, 900);
   };
 
+  const handleRegisterSubmit = (e) => {
+    e.preventDefault();
+    setRegError("");
+    if (!regName.trim() || !regEmail.trim() || !regPassword || !regConfirm) {
+      setRegError("Please fill in all fields.");
+      return;
+    }
+    if (regPassword !== regConfirm) {
+      setRegError("Passwords do not match.");
+      return;
+    }
+    if (regPassword.length < 8) {
+      setRegError("Password must be at least 8 characters.");
+      return;
+    }
+    setRegLoading(true);
+    setRegStatus("");
+    // NOTE: Real account creation is pending Firebase Authentication +
+    // Firestore integration. This is intentionally a holding state until
+    // that backend wiring is connected in a future update.
+    setTimeout(() => {
+      setRegLoading(false);
+      setRegStatus("⏳ Waiting for connection to Firebase / Firestore… registration will be enabled once the backend is connected.");
+    }, 900);
+  };
+
   return (
     <div className="login-page">
       {/* ── Left Panel – Illustration ── */}
@@ -338,105 +373,207 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
             <div className="login-brand-title">Asha<span>+</span></div>
           </div>
 
-          <div className="login-subtitle">Login with your email and password</div>
+          {!showRegister ? (
+            <>
+              <div className="login-subtitle">Login with your email and password</div>
 
-          <form onSubmit={handleLogin} style={{ width: "100%" }}>
-            {/* Role dropdown */}
-            <div className="login-field">
-              <select
-                className="login-select"
-                value={role}
-                onChange={(e) => { setRole(e.target.value); setError(""); }}
-              >
-                <option value="admin">Login as Admin</option>
-                <option value="asha">Login as ASHA Worker</option>
-                <option value="patient">Login as Patient</option>
-              </select>
-              <span className="login-select-arrow">▾</span>
-            </div>
-
-            {/* Email */}
-            <div className="login-field">
-              <input
-                className="login-input"
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Password */}
-            <div className="login-field" style={{ position: "relative" }}>
-              <input
-                className="login-input"
-                type={showPass ? "text" : "password"}
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPass(e.target.value)}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowP((p) => !p)}
-                style={{
-                  position: "absolute", right: 16, top: "50%",
-                  transform: "translateY(-50%)",
-                  background: "none", border: "none",
-                  cursor: "pointer", fontSize: 16, color: "rgba(109,40,217,0.5)",
-                }}
-              >
-                {showPass ? "🙈" : "👁️"}
-              </button>
-            </div>
-
-            {/* Forgot password */}
-            <div style={{ textAlign: "right", marginBottom: 20 }}>
-              <span
-                className="login-link"
-                onClick={() => setShowCreds((p) => !p)}
-              >
-                {showCreds ? "Hide Demo Credentials" : "Forgot Password?"}
-              </span>
-            </div>
-
-            {/* Demo creds */}
-            {showCreds && (
-              <div className="login-demo-creds">
-                <div style={{ marginBottom: 6 }}>
-                  <b>Admin:</b> admin@ashacare.in / admin123
+              <form onSubmit={handleLogin} style={{ width: "100%" }}>
+                {/* Role dropdown */}
+                <div className="login-field">
+                  <select
+                    className="login-select"
+                    value={role}
+                    onChange={(e) => { setRole(e.target.value); setError(""); }}
+                  >
+                    <option value="admin">Login as Admin</option>
+                    <option value="asha">Login as ASHA Worker</option>
+                    <option value="patient">Login as Patient</option>
+                  </select>
+                  <span className="login-select-arrow">▾</span>
                 </div>
-                <div style={{ marginBottom: 6 }}>
-                  <b>ASHA Worker (Noida):</b> asha.noida@ashacare.in / asha123
+
+                {/* Email */}
+                <div className="login-field">
+                  <input
+                    className="login-input"
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
-                <div>
-                  <b>Patient:</b> priya@email.com / patient123
+
+                {/* Password */}
+                <div className="login-field" style={{ position: "relative" }}>
+                  <input
+                    className="login-input"
+                    type={showPass ? "text" : "password"}
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPass(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowP((p) => !p)}
+                    style={{
+                      position: "absolute", right: 16, top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none", border: "none",
+                      cursor: "pointer", fontSize: 16, color: "rgba(109,40,217,0.5)",
+                    }}
+                  >
+                    {showPass ? "🙈" : "👁️"}
+                  </button>
                 </div>
+
+                {/* Forgot password */}
+                <div style={{ textAlign: "right", marginBottom: showForgotMsg ? 10 : 20 }}>
+                  <span
+                    className="login-link"
+                    onClick={() => setShowForgotMsg((p) => !p)}
+                  >
+                    Forgot Password?
+                  </span>
+                </div>
+
+                {/* Forgot password placeholder — pending Firebase Auth wiring */}
+                {showForgotMsg && (
+                  <div className="login-demo-creds" style={{ marginBottom: 20 }}>
+                    Password reset isn't available yet. This will be enabled once
+                    Firebase Authentication &amp; Firestore are connected in an
+                    upcoming update. Please contact your administrator for now.
+                  </div>
+                )}
+
+                {/* Error */}
+                {error && (
+                  <div className="login-error">{error}</div>
+                )}
+
+                {/* Login button */}
+                <button
+                  type="submit"
+                  className="login-btn"
+                  disabled={loading}
+                >
+                  {loading ? <span className="spinner" style={{ borderTopColor: "#fff", borderColor: "rgba(255,255,255,0.3)" }} /> : null}
+                  {loading ? "Signing in…" : "Login"}
+                </button>
+              </form>
+
+              {/* Register link */}
+              <div className="login-register-row">
+                Don't have an account?{" "}
+                <span
+                  className="login-register-link"
+                  onClick={() => { setShowRegister(true); setRegStatus(""); setRegError(""); }}
+                >
+                  Register
+                </span>
               </div>
-            )}
+            </>
+          ) : (
+            <>
+              <div className="login-subtitle">Create a new account</div>
 
-            {/* Error */}
-            {error && (
-              <div className="login-error">{error}</div>
-            )}
+              <form onSubmit={handleRegisterSubmit} style={{ width: "100%" }}>
+                {/* Name */}
+                <div className="login-field">
+                  <input
+                    className="login-input"
+                    type="text"
+                    placeholder="Full Name"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    required
+                  />
+                </div>
 
-            {/* Login button */}
-            <button
-              type="submit"
-              className="login-btn"
-              disabled={loading}
-            >
-              {loading ? <span className="spinner" style={{ borderTopColor: "#fff", borderColor: "rgba(255,255,255,0.3)" }} /> : null}
-              {loading ? "Signing in…" : "Login"}
-            </button>
-          </form>
+                {/* Email */}
+                <div className="login-field">
+                  <input
+                    className="login-input"
+                    type="email"
+                    placeholder="Email"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    required
+                  />
+                </div>
 
-          {/* Register link */}
-          <div className="login-register-row">
-            Don't have an account?{" "}
-            <span className="login-register-link">Register</span>
-          </div>
+                {/* Password */}
+                <div className="login-field" style={{ position: "relative" }}>
+                  <input
+                    className="login-input"
+                    type={regShowPass ? "text" : "password"}
+                    placeholder="Password"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRegShowPass((p) => !p)}
+                    style={{
+                      position: "absolute", right: 16, top: "50%",
+                      transform: "translateY(-50%)",
+                      background: "none", border: "none",
+                      cursor: "pointer", fontSize: 16, color: "rgba(109,40,217,0.5)",
+                    }}
+                  >
+                    {regShowPass ? "🙈" : "👁️"}
+                  </button>
+                </div>
+
+                {/* Confirm Password */}
+                <div className="login-field" style={{ marginBottom: 20 }}>
+                  <input
+                    className="login-input"
+                    type={regShowPass ? "text" : "password"}
+                    placeholder="Confirm Password"
+                    value={regConfirm}
+                    onChange={(e) => setRegConfirm(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Pending backend connection notice */}
+                {regStatus && (
+                  <div className="login-demo-creds" style={{ marginBottom: 20 }}>
+                    {regStatus}
+                  </div>
+                )}
+
+                {/* Error */}
+                {regError && (
+                  <div className="login-error">{regError}</div>
+                )}
+
+                {/* Register button */}
+                <button
+                  type="submit"
+                  className="login-btn"
+                  disabled={regLoading}
+                >
+                  {regLoading ? <span className="spinner" style={{ borderTopColor: "#fff", borderColor: "rgba(255,255,255,0.3)" }} /> : null}
+                  {regLoading ? "Connecting…" : "Register"}
+                </button>
+              </form>
+
+              {/* Back to login */}
+              <div className="login-register-row">
+                Already have an account?{" "}
+                <span
+                  className="login-register-link"
+                  onClick={() => { setShowRegister(false); setRegStatus(""); setRegError(""); }}
+                >
+                  Login
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
