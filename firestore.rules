@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// =============================================================================
+//  Asha Plus — Firestore Security Rules
+// =============================================================================
+//
+//  Role hierarchy (stored as a custom claim on the Firebase Auth JWT):
+//    super_admin  ─ full access to everything
+//    admin        ─ full CRUD on patients, visits, schemes; manages asha/patient users
+//    asha         ─ read/write patients and visits in their assigned location
+//    patient      ─ read only their own patient record and visit history
+//
+//  All writes that mutate roles or delete users go through Cloud Functions
+//  (which use the Admin SDK and therefore bypass these rules entirely).
+//  These rules only govern what the frontend Firestore SDK can access directly.
+//
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && role() == 'super_admin';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && role() in ['admin', 'super_admin'];
+    }
+
+    function isAsha() {
+      return isSignedIn() && role() in ['asha', 'admin', 'super_admin'];
+    }
+
+    function isPatient() {
+      return isSignedIn() && role() == 'patient';
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  USERS  /users/{uid}
+    //  • Any authenticated user can read their own profile.
+    //  • Admins can read all profiles (for the user management screen).
+    //  • Writes are ALWAYS via Cloud Functions (Admin SDK) — never direct.
+    // ─────────────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  PATIENTS  /patients/{patientId}
+    //  • Admin/asha: read all patients.
+    //  • Patient: read only their own record (matched by email on the doc).
+    //  • Writes are via Cloud Functions only.
+    // ─────────────────────────────────────────────────────────────────────
+    match /patients/{patientId} {
+      allow read: if isAsha()
+                  || (isPatient() && resource.data.email == request.auth.token.email);
+      allow write: if false;
+
+      // ── Visit history subcollection ─────────────────────────────────
+      //  Same read rules as the parent patient document.
+      match /visits/{visitId} {
+        allow read: if isAsha()
+                    || (isPatient()
+                        && get(/databases/$(database)/documents/patients/$(patientId))
+                              .data.email == request.auth.token.email);
+        allow write: if false;
+      }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  GOVERNMENT SCHEMES  /govt_schemes/{schemeId}
+    //  • All authenticated users can read (patients browse schemes).
+    //  • Writes are via Cloud Functions only.
+    // ─────────────────────────────────────────────────────────────────────
+    match /govt_schemes/{schemeId} {
+      allow read:  if isSignedIn();
+      allow write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  AI RESPONSE CACHE  /cached_responses/{docId}
+    //  • No direct client access — Cloud Functions handle all reads/writes.
+    // ─────────────────────────────────────────────────────────────────────
+    match /cached_responses/{docId} {
+      allow read, write: if false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  CATCH-ALL — deny everything not explicitly allowed above
+    // ─────────────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
