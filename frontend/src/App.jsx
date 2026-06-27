@@ -473,7 +473,7 @@ const PATIENT_NAV = [
 ];
 
 function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, onToggleCollapse, patientCount }) {
-  const isStaff = user.role === "admin" || user.role === "asha";
+  const isStaff = user.role === "admin" || user.role === "super_admin" || user.role === "asha";
   const nav = isStaff
     ? ADMIN_NAV.map((item) => item.key === "patients" ? { ...item, badge: String(patientCount) } : item)
     : PATIENT_NAV;
@@ -555,9 +555,11 @@ function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, o
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
                   {user.role === "admin"
                     ? "Admin"
-                    : user.role === "asha"
-                      ? `ASHA Worker • ${user.location}`
-                      : "Patient"}
+                    : user.role === "super_admin"
+                      ? "Super Admin"
+                      : user.role === "asha"
+                        ? `ASHA Worker • ${user.location}`
+                        : "Patient"}
                 </div>
               </div>
             )}
@@ -587,7 +589,7 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle, onNav }) {
         {user.role === "asha" && (
           <span className="badge badge-blue">📍 {user.location}</span>
         )}
-        {user.role === "admin" ? (
+        {(user.role === "admin" || user.role === "super_admin") ? (
           <button
             type="button"
             className="welcome-text welcome-link"
@@ -882,7 +884,7 @@ function AdminDashboard({ patients, user, onNav, onEditPatient, onViewPatient, o
         <button className="btn btn-gold btn-sm" onClick={() => onNav("register")}>
           ➕ Add Patient
         </button>
-        {user?.role === "admin" && (
+        {(user?.role === "admin" || user?.role === "super_admin") && (
           <button className="btn btn-outline-purple btn-sm" onClick={() => onNav("manage-asha")}>
             ⚕️ Manage ASHA
           </button>
