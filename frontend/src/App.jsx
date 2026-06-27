@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, useRef } from "react";
+import { addPatient, updatePatient, deletePatient, askHealthAssistant } from "./api";
 import "./App.css";
 
 // ─── Login illustration (base64 so the component stays self-contained) ──────
@@ -271,56 +272,33 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
   const [regStatus, setRegStatus] = useState("");
   const [regError, setRegError] = useState("");
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
-    setTimeout(() => {
-      const emailTrim = email.trim();
-      if (role === "admin") {
-        const now = Date.now();
-        if (adminProfile.lockUntil && adminProfile.lockUntil > now) {
-          const mins = Math.ceil((adminProfile.lockUntil - now) / 60000);
-          setError(`Account temporarily locked due to multiple failed attempts. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`);
-          setLoading(false);
-          return;
-        }
-        if (emailTrim.toLowerCase() === adminProfile.email.toLowerCase() && password === adminProfile.password) {
-          setAdminProfile((p) => ({ ...p, failedAttempts: 0, lockUntil: null, lastLogin: new Date().toISOString() }));
-          onLogin({ role: "admin", email: adminProfile.email, name: adminProfile.name });
-        } else {
-          setAdminProfile((p) => {
-            const attempts = (p.failedAttempts || 0) + 1;
-            if (attempts >= LOCKOUT_MAX_ATTEMPTS) {
-              return { ...p, failedAttempts: 0, lockUntil: Date.now() + LOCKOUT_DURATION_MS };
-            }
-            return { ...p, failedAttempts: attempts };
-          });
-          const remaining = LOCKOUT_MAX_ATTEMPTS - ((adminProfile.failedAttempts || 0) + 1);
-          setError(
-            remaining > 0
-              ? `Invalid email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} left before temporary lockout.`
-              : "Too many failed attempts. Account locked for 15 minutes."
-          );
-        }
-      } else if (role === "asha") {
-        const worker = ashaWorkers.find(
-          (w) => w.email.toLowerCase() === emailTrim.toLowerCase() && w.password === password
-        );
-        if (worker) {
-          onLogin({ role: "asha", email: worker.email, name: worker.name, location: worker.location, ashaId: worker.id });
-        } else {
-          setError("Invalid email or password. Please try again.");
-        }
-      } else {
-        if (emailTrim === PATIENT_CREDS.email && password === PATIENT_CREDS.password) {
-          onLogin({ role: "patient", email: emailTrim, name: "Priya Sharma" });
-        } else {
-          setError("Invalid email or password. Please try again.");
-        }
-      }
-      setLoading(false);
-    }, 900);
+    try {
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      const { auth } = await import("./firebaseConfig");
+
+      const cred  = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const token = await cred.user.getIdTokenResult();
+      const role  = token.claims.role;
+
+      if (!role) throw new Error("No role assigned. Contact your administrator.");
+
+      onLogin({
+        role,
+        email: cred.user.email,
+        name: cred.user.displayName || email,
+        uid: cred.user.uid,
+        ...(role === "asha" ? { location: token.claims.location || "" } : {}),
+      });
+    } catch (err) {
+      setError(
+        err.message.includes("auth/") ? "Invalid email or password." : err.message
+      );
+    }
+    setLoading(false);
   };
 
   const handleRegisterSubmit = (e) => {
