@@ -1,106 +1,42 @@
 rules_version = '2';
 
-// =============================================================================
-//  Asha Plus — Firestore Security Rules
-// =============================================================================
-//
-//  Role hierarchy (stored as a custom claim on the Firebase Auth JWT):
-//    super_admin  ─ full access to everything
-//    admin        ─ full CRUD on patients, visits, schemes; manages asha/patient users
-//    asha         ─ read/write patients and visits in their assigned location
-//    patient      ─ read only their own patient record and visit history
-//
-//  All writes that mutate roles or delete users go through Cloud Functions
-//  (which use the Admin SDK and therefore bypass these rules entirely).
-//  These rules only govern what the frontend Firestore SDK can access directly.
-//
-// =============================================================================
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ──────────────────────────────────────────────────
+    // ── Helper functions ──────────────────────────────────────────────────────
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function role() {
-      return request.auth.token.role;
-    }
-
-    function isSuperAdmin() {
-      return isSignedIn() && role() == 'super_admin';
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
     function isAdmin() {
-      return isSignedIn() && role() in ['admin', 'super_admin'];
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    function isAsha() {
-      return isSignedIn() && role() in ['asha', 'admin', 'super_admin'];
+    function isSuperAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superAdmin';
     }
 
-    function isPatient() {
-      return isSignedIn() && role() == 'patient';
+    // ── Users collection ──────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      allow read:   if isOwner(userId) || isAdmin() || isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update: if isOwner(userId) || isAdmin() || isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    //  USERS  /users/{uid}
-    //  • Any authenticated user can read their own profile.
-    //  • Admins can read all profiles (for the user management screen).
-    //  • Writes are ALWAYS via Cloud Functions (Admin SDK) — never direct.
-    // ─────────────────────────────────────────────────────────────────────
-    match /users/{uid} {
-      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow write: if false;
-    }
+    // ── Add your other collections below ──────────────────────────────────────
+    // Example:
+    // match /appointments/{docId} {
+    //   allow read, write: if isSignedIn();
+    // }
 
-    // ─────────────────────────────────────────────────────────────────────
-    //  PATIENTS  /patients/{patientId}
-    //  • Admin/asha: read all patients.
-    //  • Patient: read only their own record (matched by email on the doc).
-    //  • Writes are via Cloud Functions only.
-    // ─────────────────────────────────────────────────────────────────────
-    match /patients/{patientId} {
-      allow read: if isAsha()
-                  || (isPatient() && resource.data.email == request.auth.token.email);
-      allow write: if false;
-
-      // ── Visit history subcollection ─────────────────────────────────
-      //  Same read rules as the parent patient document.
-      match /visits/{visitId} {
-        allow read: if isAsha()
-                    || (isPatient()
-                        && get(/databases/$(database)/documents/patients/$(patientId))
-                              .data.email == request.auth.token.email);
-        allow write: if false;
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    //  GOVERNMENT SCHEMES  /govt_schemes/{schemeId}
-    //  • All authenticated users can read (patients browse schemes).
-    //  • Writes are via Cloud Functions only.
-    // ─────────────────────────────────────────────────────────────────────
-    match /govt_schemes/{schemeId} {
-      allow read:  if isSignedIn();
-      allow write: if false;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    //  AI RESPONSE CACHE  /cached_responses/{docId}
-    //  • No direct client access — Cloud Functions handle all reads/writes.
-    // ─────────────────────────────────────────────────────────────────────
-    match /cached_responses/{docId} {
-      allow read, write: if false;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────
-    //  CATCH-ALL — deny everything not explicitly allowed above
-    // ─────────────────────────────────────────────────────────────────────
-    match /{document=**} {
-      allow read, write: if false;
-    }
   }
 }
