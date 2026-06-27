@@ -1,5 +1,25 @@
 import { useState, useEffect, createContext, useContext, useRef } from "react";
-import { addPatient, updatePatient, deletePatient, askHealthAssistant } from "./api";
+import {
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  orderBy,
+  where,
+} from "firebase/firestore";
+import { auth, db } from "./firebaseConfig";
+import {
+  addPatient,
+  updatePatient,
+  deletePatient,
+  askHealthAssistant,
+} from "./api";
 import "./App.css";
 
 // ─── Login illustration (base64 so the component stays self-contained) ──────
@@ -9,53 +29,7 @@ const WOMEN_ILLUSTRATION = "/illustration.jpg";
 const AuthContext = createContext(null);
 const useAuth = () => useContext(AuthContext);
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
-const MOCK_PATIENTS = [
-  {
-    id: "P001", name: "Priya Sharma", age: 28, gender: "Female",
-    blood: "B+", mobile: "9876543210", email: "priya@email.com",
-    village: "Noida", state: "Uttar Pradesh", diseases: "Diabetes",
-    registered: "2024-11-10",
-  },
-  {
-    id: "P002", name: "Rahul Verma", age: 35, gender: "Male",
-    blood: "O+", mobile: "9123456780", email: "rahul@email.com",
-    village: "Ghaziabad", state: "Uttar Pradesh", diseases: "Hypertension",
-    registered: "2024-12-01",
-  },
-  {
-    id: "P003", name: "Sunita Devi", age: 42, gender: "Female",
-    blood: "A+", mobile: "9988776655", email: "sunita@email.com",
-    village: "Meerut", state: "Uttar Pradesh", diseases: "Asthma",
-    registered: "2025-01-15",
-  },
-  {
-    id: "P004", name: "Amit Kumar", age: 31, gender: "Male",
-    blood: "AB+", mobile: "8877665544", email: "amit@email.com",
-    village: "Lucknow", state: "Uttar Pradesh", diseases: "None",
-    registered: "2025-02-20",
-  },
-];
-
-const ADMIN_CREDS  = { email: "admin@ashacare.in", password: "admin123" };
-const PATIENT_CREDS = { email: "priya@email.com",   password: "patient123" };
-
-// ─── Admin Profile (security-relevant fields, lifted into App state) ────────
-// In a real backend, `password` would never be stored/compared client-side in
-// plaintext — this would be a bcrypt/argon2 hash check on the server. Kept as
-// a plain value here only because this mock has no backend.
-const DEFAULT_ADMIN_PROFILE = {
-  name: "Admin",
-  email: ADMIN_CREDS.email,
-  password: ADMIN_CREDS.password,
-  securityQuestion: "",
-  securityAnswer: "",
-  failedAttempts: 0,
-  lockUntil: null,            // epoch ms while locked out
-  lastPasswordChange: null,   // ISO date string
-  lastLogin: null,            // ISO date string
-};
-
+// ─── Security / Password Config (still used by Manage Admin Profile UI) ─────
 const SECURITY_QUESTIONS = [
   "What was the name of your first school?",
   "What is your mother's maiden name?",
@@ -78,147 +52,6 @@ function passwordStrength(pw) {
   if (score <= 3) return { label: "Medium", cls: "medium", pct: 60 };
   return { label: "Strong", cls: "strong", pct: 100 };
 }
-
-// ─── ASHA Workers (location-scoped accounts, added/managed by Admin only) ────
-// Each worker can log in and gets the full ASHA/Admin dashboard, but every
-// patient list is filtered down to `location` (matched against patient.village).
-const MOCK_ASHA_WORKERS = [
-  {
-    id: "ASHA-001", name: "Asha Devi", email: "asha.noida@ashacare.in",
-    password: "asha123", mobile: "9876512340", location: "Noida",
-    registered: "2024-10-01",
-  },
-  {
-    id: "ASHA-002", name: "Geeta Kumari", email: "geeta.ghaziabad@ashacare.in",
-    password: "asha123", mobile: "9876512341", location: "Ghaziabad",
-    registered: "2024-11-05",
-  },
-];
-
-// ─── Mock visit / history records, keyed by patient ID ───────────────────────
-// `type`, `note`, `healthAlert` and `precaution` are bilingual (en/hi) so the
-// same record can be shown to the ASHA worker/admin and the patient in either
-// language. Vitals (bp/sugar/weight/temperature/pulse/spo2) are unit-bearing
-// strings, language-agnostic, shown as chips when present.
-const MOCK_HISTORY = {
-  P001: [
-    {
-      id: "h-p001-1", date: "2025-01-15", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "Follow-up Checkup", hi: "अनुवर्ती जांच" },
-      note: {
-        en: "Blood sugar slightly elevated, advised diet control.",
-        hi: "रक्त शर्करा थोड़ी बढ़ी हुई पाई गई, आहार नियंत्रण की सलाह दी गई।",
-      },
-      healthAlert: {
-        en: "Blood sugar trending upward — monitor closely.",
-        hi: "रक्त शर्करा बढ़ने की प्रवृत्ति — बारीकी से निगरानी करें।",
-      },
-      precaution: {
-        en: "Limit sugar and refined carbs; recheck blood sugar after 2 weeks.",
-        hi: "चीनी और रिफाइंड कार्बोहाइड्रेट सीमित करें; 2 सप्ताह बाद रक्त शर्करा की दोबारा जांच कराएं।",
-      },
-      bp: "128/84", sugar: "142 mg/dL", weight: "61 kg", temperature: "", pulse: "", spo2: "",
-    },
-    {
-      id: "h-p001-2", date: "2024-12-02", worker: "Dr. Sunita Rao",
-      type: { en: "Diabetes Screening", hi: "मधुमेह जांच" },
-      note: {
-        en: "HbA1c 6.2 – pre-diabetic range, started on Metformin.",
-        hi: "HbA1c 6.2 – प्री-डायबिटिक रेंज में, मेटफॉर्मिन शुरू किया गया।",
-      },
-      healthAlert: {
-        en: "Pre-diabetic HbA1c level detected.",
-        hi: "प्री-डायबिटिक HbA1c स्तर पाया गया।",
-      },
-      precaution: {
-        en: "Take Metformin as prescribed; avoid sugary foods.",
-        hi: "निर्धारित अनुसार मेटफॉर्मिन लें; मीठे खाद्य पदार्थों से बचें।",
-      },
-      bp: "124/80", sugar: "150 mg/dL", weight: "62 kg", temperature: "", pulse: "", spo2: "",
-    },
-    {
-      id: "h-p001-3", date: "2024-11-10", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
-      note: {
-        en: "Initial registration, baseline vitals recorded.",
-        hi: "प्रारंभिक पंजीकरण, बेसलाइन वाइटल्स दर्ज किए गए।",
-      },
-      healthAlert: { en: "", hi: "" },
-      precaution: { en: "", hi: "" },
-      bp: "120/80", sugar: "—", weight: "63 kg", temperature: "98.4°F", pulse: "76 bpm", spo2: "98%",
-    },
-  ],
-  P002: [
-    {
-      id: "h-p002-1", date: "2025-02-10", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "BP Monitoring", hi: "रक्तचाप निगरानी" },
-      note: {
-        en: "BP under control with current medication.",
-        hi: "वर्तमान दवा से रक्तचाप नियंत्रण में है।",
-      },
-      healthAlert: { en: "", hi: "" },
-      precaution: {
-        en: "Continue current medication; monitor BP weekly.",
-        hi: "वर्तमान दवा जारी रखें; साप्ताहिक रूप से रक्तचाप की निगरानी करें।",
-      },
-      bp: "138/88", sugar: "—", weight: "78 kg", temperature: "", pulse: "", spo2: "",
-    },
-    {
-      id: "h-p002-2", date: "2024-12-01", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
-      note: {
-        en: "Diagnosed with hypertension, prescribed Amlodipine.",
-        hi: "उच्च रक्तचाप का निदान किया गया, एम्लोडिपिन निर्धारित की गई।",
-      },
-      healthAlert: {
-        en: "High blood pressure detected at registration.",
-        hi: "पंजीकरण के समय उच्च रक्तचाप पाया गया।",
-      },
-      precaution: { en: "", hi: "" },
-      bp: "150/95", sugar: "—", weight: "79 kg", temperature: "", pulse: "88 bpm", spo2: "",
-    },
-  ],
-  P003: [
-    {
-      id: "h-p003-1", date: "2025-03-05", worker: "Dr. Ravi Kumar",
-      type: { en: "Asthma Review", hi: "अस्थमा समीक्षा" },
-      note: {
-        en: "Mild wheezing reported, inhaler technique reviewed.",
-        hi: "हल्की सांस फूलने की शिकायत, इन्हेलर तकनीक की समीक्षा की गई।",
-      },
-      healthAlert: { en: "", hi: "" },
-      precaution: {
-        en: "Continue inhaler use as directed; avoid known triggers.",
-        hi: "निर्देशानुसार इन्हेलर का उपयोग जारी रखें; ज्ञात ट्रिगर्स से बचें।",
-      },
-      bp: "118/76", sugar: "—", weight: "54 kg", temperature: "", pulse: "", spo2: "97%",
-    },
-    {
-      id: "h-p003-2", date: "2025-01-15", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
-      note: {
-        en: "Asthma confirmed, salbutamol inhaler issued.",
-        hi: "अस्थमा की पुष्टि हुई, सालबुटामोल इन्हेलर दिया गया।",
-      },
-      healthAlert: { en: "", hi: "" },
-      precaution: { en: "", hi: "" },
-      bp: "116/74", sugar: "—", weight: "55 kg", temperature: "", pulse: "", spo2: "",
-    },
-  ],
-  P004: [
-    {
-      id: "h-p004-1", date: "2025-02-20", worker: "Asha Devi (ASHA Worker)",
-      type: { en: "Registration Checkup", hi: "पंजीकरण जांच" },
-      note: {
-        en: "No existing conditions found, general health good.",
-        hi: "कोई मौजूदा बीमारी नहीं पाई गई, सामान्य स्वास्थ्य अच्छा है।",
-      },
-      healthAlert: { en: "", hi: "" },
-      precaution: { en: "", hi: "" },
-      bp: "118/78", sugar: "92 mg/dL", weight: "70 kg", temperature: "98.6°F", pulse: "72 bpm", spo2: "99%",
-    },
-  ],
-};
 
 // ─── Icons (emoji-based, no deps) ────────────────────────────────────────────
 const Icon = ({ e, size }) => (
@@ -254,7 +87,7 @@ function useToast() {
 }
 
 // ─── Auth Page ────────────────────────────────────────────────────────────────
-function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) {
+function AuthPage({ onLogin }) {
   const [role, setRole]       = useState("admin");
   const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
@@ -272,33 +105,42 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
   const [regStatus, setRegStatus] = useState("");
   const [regError, setRegError] = useState("");
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e) => {
+    e?.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const { signInWithEmailAndPassword } = await import("firebase/auth");
-      const { auth } = await import("./firebaseConfig");
+      // 1. Sign in with Firebase Auth
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-      const cred  = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const token = await cred.user.getIdTokenResult();
-      const role  = token.claims.role;
+      // 2. Force token refresh so custom claims (role) are included
+      await cred.user.getIdToken(true);
 
-      if (!role) throw new Error("No role assigned. Contact your administrator.");
+      // 3. Fetch the user profile from Firestore
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      if (!snap.exists()) {
+        throw new Error("User profile not found. Contact your administrator.");
+      }
 
-      onLogin({
-        role,
-        email: cred.user.email,
-        name: cred.user.displayName || email,
-        uid: cred.user.uid,
-        ...(role === "asha" ? { location: token.claims.location || "" } : {}),
-      });
+      const profile = snap.data();
+
+      // 4. Hand the full profile to App so it sets the user state
+      onLogin(profile);
     } catch (err) {
-      setError(
-        err.message.includes("auth/") ? "Invalid email or password." : err.message
-      );
+      // Convert Firebase error codes to friendly messages
+      const msg = err.message || "";
+      if (msg.includes("auth/invalid-credential") || msg.includes("auth/wrong-password") || msg.includes("auth/user-not-found")) {
+        setError("Incorrect email or password.");
+      } else if (msg.includes("auth/too-many-requests")) {
+        setError("Too many failed attempts. Try again later.");
+      } else if (msg.includes("auth/user-disabled")) {
+        setError("This account has been disabled. Contact your administrator.");
+      } else {
+        setError(msg.replace("Firebase: ", "").replace(/\s*\(auth\/[^)]+\)/, "").trim());
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleRegisterSubmit = (e) => {
@@ -355,7 +197,7 @@ function AuthPage({ onLogin, ashaWorkers = [], adminProfile, setAdminProfile }) 
             <>
               <div className="login-subtitle">Login with your email and password</div>
 
-              <form onSubmit={handleLogin} style={{ width: "100%" }}>
+              <form onSubmit={handleSubmit} style={{ width: "100%" }}>
                 {/* Role dropdown */}
                 <div className="login-field">
                   <select
@@ -1488,7 +1330,26 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
 
 // ─── Patient Dashboard ────────────────────────────────────────────────────────
 function PatientDashboard({ user }) {
-  const patient = MOCK_PATIENTS[0];
+  const [patient, setPatient] = useState(null);
+
+  // Look up this patient's own record in Firestore by matching their login email.
+  useEffect(() => {
+    if (!user?.email) return;
+    const q = query(collection(db, "patients"), where("email", "==", user.email));
+    return onSnapshot(q, (snap) => {
+      if (!snap.empty) setPatient({ ...snap.docs[0].data(), id: snap.docs[0].id });
+    });
+  }, [user]);
+
+  if (!patient) {
+    return (
+      <div className="page-body">
+        <div className="card card-ai">
+          <div className="card-body">Loading your profile…</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-body">
@@ -1733,7 +1594,42 @@ function ChatBot() {
 
 // ─── Health Records ───────────────────────────────────────────────────────────
 function HealthRecords({ user, history, setHistory }) {
-  const patient = MOCK_PATIENTS.find((p) => p.email === user?.email) || MOCK_PATIENTS[0];
+  const [patient, setPatient] = useState(null);
+
+  // Look up this patient's own record in Firestore by matching their login email.
+  useEffect(() => {
+    if (!user?.email) return;
+    const q = query(collection(db, "patients"), where("email", "==", user.email));
+    return onSnapshot(q, (snap) => {
+      if (!snap.empty) setPatient({ ...snap.docs[0].data(), id: snap.docs[0].id });
+    });
+  }, [user]);
+
+  // Real-time visit history for this patient (admin/ASHA view loads this via
+  // the activePatient effect in App; a patient viewing their own records needs
+  // its own listener since there's no activePatient set for them).
+  useEffect(() => {
+    if (!patient) return;
+    const q = query(
+      collection(db, "patients", patient.id, "visits"),
+      orderBy("date", "desc")
+    );
+    return onSnapshot(q, (snap) => {
+      const visits = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      setHistory((prev) => ({ ...prev, [patient.id]: visits }));
+    });
+  }, [patient]);
+
+  if (!patient) {
+    return (
+      <div className="page-body">
+        <div className="card card-ai">
+          <div className="card-body">Loading your records…</div>
+        </div>
+      </div>
+    );
+  }
+
   const records = history[patient.id] || [];
 
   return (
@@ -3528,10 +3424,6 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
       return;
     }
     const emailLower = form.email.trim().toLowerCase();
-    if (emailLower === ADMIN_CREDS.email.toLowerCase() || emailLower === PATIENT_CREDS.email.toLowerCase()) {
-      setError("This email is already used by another account.");
-      return;
-    }
     const clash = existingWorkers.some(
       (w) => w.email.toLowerCase() === emailLower && w.id !== initial?.id
     );
@@ -3839,63 +3731,179 @@ const PAGE_TITLES = {
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user,       setUser]     = useState(null);
-  const [page,       setPage]     = useState("dashboard");
-  const [patients,   setPatients] = useState(MOCK_PATIENTS);
-  const [ashaWorkers, setAshaWorkers] = useState(MOCK_ASHA_WORKERS); // managed by Admin only
-  const [adminProfile, setAdminProfile] = useState(DEFAULT_ADMIN_PROFILE); // admin's own name/password/security Q
-  const [schemes,    setSchemes] = useState(GOVT_SCHEMES); // shared across admin (CRUD) & patient (view-only)
-  const [history,    setHistory] = useState(MOCK_HISTORY); // { [patientId]: record[] } — shared across admin (CRUD) & patient (view-only)
-  const [mobileMenu, setMobile]  = useState(false);
-  const [collapsed,  setCollapsed] = useState(false);
-  const [activePatient, setActivePatient] = useState(null); // patient being viewed/edited
-  const [returnPage, setReturnPage] = useState("dashboard"); // page to return to after view/edit
-  const [confirmDelete, setConfirmDelete] = useState(null); // patient pending delete confirmation
-  const { toasts, add: toast, dismiss } = useToast();
+  const [user,          setUser]          = useState(null);
+  const [page,          setPage]          = useState("dashboard");
+  const [patients,      setPatients]      = useState([]);
+  const [ashaWorkers,   setAshaWorkers]   = useState([]);
+  const [schemes,       setSchemes]       = useState(GOVT_SCHEMES); // real scheme data — shown until Firestore has its own docs
+  const [history,       setHistory]       = useState({});
+  const [mobileMenu,    setMobile]        = useState(false);
+  const [collapsed,     setCollapsed]     = useState(false);
+  const [activePatient, setActivePatient] = useState(null);
+  const [returnPage,    setReturnPage]    = useState("dashboard");
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [authLoading,   setAuthLoading]   = useState(true); // prevents flash of login page
+  const { toasts, add: toast, dismiss }  = useToast();
 
-  const login  = (u) => { setUser(u); setPage(u.role === "patient" ? "profile" : "dashboard"); };
-  const logout = () => { setUser(null); setPage("dashboard"); setCollapsed(false); };
-  const handleNav = (key) => { setPage(key); setMobile(false); };
+  // ── Restore session on page refresh ────────────────────────────────────────
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          await firebaseUser.getIdToken(true); // refresh so role claim is present
+          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (snap.exists()) {
+            const profile = snap.data();
+            setUser(profile);
+            setPage(profile.role === "patient" ? "profile" : "dashboard");
+          }
+        } catch (err) {
+          console.error("Session restore failed:", err);
+        }
+      }
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
 
-  const openProfile = (p) => { setActivePatient(p); setReturnPage(page); setPage("patient-profile"); };
-  const openEdit    = (p) => { setActivePatient(p); setReturnPage(page); setPage("edit-patient"); };
+  // ── Real-time patients from Firestore ───────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "patients"), orderBy("registered", "desc"));
+    return onSnapshot(q, (snap) =>
+      setPatients(snap.docs.map((d) => ({ ...d.data(), id: d.id })))
+    );
+  }, [user]);
 
-  const saveEditedPatient = (updated) => {
-    setPatients((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
-    setActivePatient(updated);
-    toast("Patient updated successfully!", "success", `${updated.name} (${updated.id})`);
-    setPage(returnPage === "edit-patient" ? "dashboard" : returnPage);
+  // ── Real-time government schemes from Firestore ─────────────────────────────
+  // Falls back to the built-in GOVT_SCHEMES until the "govt_schemes" collection
+  // actually has documents in it — see seedGovtSchemes.js to push them in.
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(collection(db, "govt_schemes"), (snap) => {
+      if (!snap.empty) {
+        setSchemes(snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      }
+    });
+  }, [user]);
+
+  // ── Real-time ASHA workers list (admin/super_admin only) ────────────────────
+  useEffect(() => {
+    if (!user) return;
+    if (user.role !== "admin" && user.role !== "super_admin") return;
+    const q = query(collection(db, "users"), where("role", "==", "asha"));
+    return onSnapshot(q, (snap) =>
+      setAshaWorkers(snap.docs.map((d) => d.data()))
+    );
+  }, [user]);
+
+  // ── Load visit history when a patient is opened ─────────────────────────────
+  useEffect(() => {
+    if (!activePatient) return;
+    const q = query(
+      collection(db, "patients", activePatient.id, "visits"),
+      orderBy("date", "desc")
+    );
+    return onSnapshot(q, (snap) => {
+      const visits = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      setHistory((prev) => ({ ...prev, [activePatient.id]: visits }));
+    });
+  }, [activePatient]);
+
+  // ── Auth helpers ────────────────────────────────────────────────────────────
+  const login = (profile) => {
+    setUser(profile);
+    setPage(profile.role === "patient" ? "profile" : "dashboard");
   };
 
-  const addNewPatient = (p) => setPatients((prev) => [...prev, p]);
+  const logout = async () => {
+    await signOut(auth);
+    setUser(null);
+    setPatients([]);
+    setSchemes([]);
+    setAshaWorkers([]);
+    setHistory({});
+    setPage("dashboard");
+    setCollapsed(false);
+  };
 
-  const requestDelete = (p) => setConfirmDelete(p);
-  const cancelDelete  = () => setConfirmDelete(null);
-  const confirmDeletePatient = () => {
-    setPatients((prev) => prev.filter((x) => x.id !== confirmDelete.id));
-    toast("Patient deleted", "success", `${confirmDelete.name} (${confirmDelete.id}) removed`);
-    if (page === "patient-profile" && activePatient?.id === confirmDelete.id) {
-      setPage(returnPage === "patient-profile" ? "dashboard" : returnPage);
+  // ── Navigation ──────────────────────────────────────────────────────────────
+  const handleNav    = (key) => { setPage(key); setMobile(false); };
+  const openProfile  = (p)   => { setActivePatient(p); setReturnPage(page); setPage("patient-profile"); };
+  const openEdit     = (p)   => { setActivePatient(p); setReturnPage(page); setPage("edit-patient"); };
+
+  // ── Patient CRUD (wired to Vercel backend via api.js) ───────────────────────
+  const addNewPatient = async (p) => {
+    try {
+      const result = await addPatient(p);
+      toast("Patient registered!", "success", `ID: ${result.patientId}`);
+      setPage("patients");
+    } catch (err) {
+      toast(err.message, "error", "Registration failed");
     }
-    setConfirmDelete(null);
   };
 
+  const saveEditedPatient = async (updated) => {
+    try {
+      // Strip read-only fields before sending to backend
+      const { id, createdAt, createdBy, registered, ...updates } = updated;
+      await updatePatient(id, updates);
+      setActivePatient(updated);
+      toast("Patient updated successfully!", "success", `${updated.name} (${updated.id})`);
+      setPage(returnPage === "edit-patient" ? "dashboard" : returnPage);
+    } catch (err) {
+      toast(err.message, "error", "Update failed");
+    }
+  };
+
+  const requestDelete         = (p) => setConfirmDelete(p);
+  const cancelDelete          = ()  => setConfirmDelete(null);
+  const confirmDeletePatient  = async () => {
+    try {
+      await deletePatient(confirmDelete.id);
+      toast("Patient deleted", "success", `${confirmDelete.name} removed`);
+      if (page === "patient-profile" && activePatient?.id === confirmDelete.id) {
+        setPage(returnPage === "patient-profile" ? "dashboard" : returnPage);
+      }
+      setConfirmDelete(null);
+    } catch (err) {
+      toast(err.message, "error", "Delete failed");
+    }
+  };
+
+  // ── Loading state (prevents flash of login screen on refresh) ───────────────
+  if (authLoading) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100vh", background: "var(--bg, #0f0f1a)", color: "#a78bfa",
+        fontSize: "1.1rem", fontFamily: "sans-serif",
+      }}>
+        Loading Asha Care…
+      </div>
+    );
+  }
+
+  // ── Auth gate ───────────────────────────────────────────────────────────────
   if (!user) return (
     <>
-      <AuthPage onLogin={login} ashaWorkers={ashaWorkers} adminProfile={adminProfile} setAdminProfile={setAdminProfile} />
+      <AuthPage onLogin={login} />
       <Toast toasts={toasts} dismiss={dismiss} />
     </>
   );
 
-  // ASHA workers only ever see/manage patients registered under their assigned location.
+  // ── ASHA workers only see patients in their assigned village ────────────────
   const visiblePatients = user.role === "asha"
     ? patients.filter(
         (p) => (p.village || "").trim().toLowerCase() === (user.location || "").trim().toLowerCase()
       )
     : patients;
 
+  // ── Page router ─────────────────────────────────────────────────────────────
   const renderPage = () => {
-    if (user.role === "admin" || user.role === "asha") {
+    const isStaff = user.role === "admin" || user.role === "super_admin" || user.role === "asha";
+
+    if (isStaff) {
       if (page === "dashboard") return (
         <AdminDashboard
           patients={visiblePatients}
@@ -3906,17 +3914,26 @@ export default function App() {
           onDeletePatient={requestDelete}
         />
       );
-      if (page === "manage-admin" && user.role === "admin") return (
+      if (page === "manage-admin" && user.role !== "asha") return (
         <ManageAdminProfile
-          adminProfile={adminProfile}
-          setAdminProfile={setAdminProfile}
+          adminProfile={user}
+          // NOTE: `user` (the Firestore login profile) has no `password` field —
+          // Firebase Auth never exposes it client-side. The password-change and
+          // security-question panels below still compare against
+          // `adminProfile.password`, so they will always report "incorrect
+          // password" until that logic is rewired to Firebase's
+          // reauthenticateWithCredential()/updatePassword() flow. This setter
+          // only keeps `name` edits working (and prevents a crash) for now.
+          setAdminProfile={(updater) =>
+            setUser((u) => (typeof updater === "function" ? updater(u) : updater))
+          }
           toast={toast}
           onBack={() => setPage("dashboard")}
           onLogout={logout}
           onNameSaved={(n) => setUser((u) => ({ ...u, name: n }))}
         />
       );
-      if (page === "manage-asha" && user.role === "admin") return (
+      if (page === "manage-asha" && user.role !== "asha") return (
         <ManageAsha
           ashaWorkers={ashaWorkers}
           setAshaWorkers={setAshaWorkers}
@@ -3925,7 +3942,7 @@ export default function App() {
           onBack={() => setPage("dashboard")}
         />
       );
-      if (page === "patients")  return (
+      if (page === "patients") return (
         <div className="page-body">
           <div className="card card-ai">
             <div className="card-header"><div className="card-title">👥 All Patients</div></div>
@@ -3940,7 +3957,7 @@ export default function App() {
           </div>
         </div>
       );
-      if (page === "register")  return (
+      if (page === "register") return (
         <RegisterPatient
           key="new"
           onNav={handleNav}
@@ -3970,21 +3987,18 @@ export default function App() {
           onEdit={openEdit}
         />
       );
-      if (page === "chatbot")   return <ChatBot />;
-      if (page === "medical")   return <MedicalAnalysis />;
-      if (page === "schemes")   return (
-        <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin toast={toast} />
-      );
-    } else {
-      if (page === "profile")  return <PatientDashboard user={user} />;
-      if (page === "records")  return (
-        <HealthRecords user={user} history={history} setHistory={setHistory} />
-      );
       if (page === "chatbot")  return <ChatBot />;
       if (page === "medical")  return <MedicalAnalysis />;
       if (page === "schemes")  return (
-        <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin={false} toast={toast} />
+        <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin toast={toast} />
       );
+    } else {
+      // Patient role
+      if (page === "profile")  return <PatientDashboard user={user} />;
+      if (page === "records")  return <HealthRecords user={user} history={history} setHistory={setHistory} />;
+      if (page === "chatbot")  return <ChatBot />;
+      if (page === "medical")  return <MedicalAnalysis />;
+      if (page === "schemes")  return <GovtSchemes schemes={schemes} setSchemes={setSchemes} isAdmin={false} toast={toast} />;
     }
     return null;
   };
@@ -4002,9 +4016,7 @@ export default function App() {
           onToggleCollapse={() => setCollapsed((p) => !p)}
           patientCount={visiblePatients.length}
         />
-        <div
-          className={`main-content${collapsed ? " sidebar-collapsed-content" : ""}`}
-        >
+        <div className={`main-content${collapsed ? " sidebar-collapsed-content" : ""}`}>
           <TopBar
             user={user}
             pageTitle={PAGE_TITLES[page] || "Asha Care"}
