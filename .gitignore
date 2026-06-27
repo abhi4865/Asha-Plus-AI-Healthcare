@@ -70,3 +70,7 @@ node_modules/
 # Firebase Functions — local secrets (NEVER commit these)
 functions/.env
 functions/.secret.local
+
+
+# .gitignore (in your root Asha-Care folder)
+seed-scripts/serviceAccountKey.json
