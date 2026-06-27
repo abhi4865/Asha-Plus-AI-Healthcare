@@ -13,14 +13,25 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
     function isAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isSignedIn() && getRole() == 'admin';
     }
 
     function isSuperAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superAdmin';
+      // FIX: was 'superAdmin' — App.jsx uses 'super_admin'
+      return isSignedIn() && getRole() == 'super_admin';
+    }
+
+    function isAsha() {
+      return isSignedIn() && getRole() == 'asha';
+    }
+
+    function isStaff() {
+      return isAdmin() || isSuperAdmin() || isAsha();
     }
 
     // ── Users collection ──────────────────────────────────────────────────────
@@ -32,11 +43,35 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // ── Add your other collections below ──────────────────────────────────────
-    // Example:
-    // match /appointments/{docId} {
-    //   allow read, write: if isSignedIn();
-    // }
+    // ── Patients collection ───────────────────────────────────────────────────
+
+    match /patients/{patientId} {
+      // Staff (admin, super_admin, asha) can read all patients
+      // Patients can only read their own record
+      allow read:   if isStaff() || isOwner(patientId);
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin() || isSuperAdmin();
+
+      // ── Visits sub-collection ─────────────────────────────────────────────
+      match /visits/{visitId} {
+        allow read:   if isStaff() || isOwner(patientId);
+        allow create: if isStaff();
+        allow update: if isStaff();
+        allow delete: if isAdmin() || isSuperAdmin();
+      }
+    }
+
+    // ── Government Schemes collection ─────────────────────────────────────────
+
+    match /govt_schemes/{schemeId} {
+      // Everyone signed in can read schemes
+      allow read:   if isSignedIn();
+      // Only admin / super_admin can manage schemes
+      allow create: if isAdmin() || isSuperAdmin();
+      allow update: if isAdmin() || isSuperAdmin();
+      allow delete: if isSuperAdmin();
+    }
 
   }
 }
