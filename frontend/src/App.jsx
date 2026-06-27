@@ -3,11 +3,13 @@ import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
   signOut,
+  createUserWithEmailAndPassword,
 } from "firebase/auth";
 import {
   collection,
   doc,
   getDoc,
+  setDoc,
   onSnapshot,
   query,
   orderBy,
@@ -143,7 +145,7 @@ function AuthPage({ onLogin }) {
     }
   };
 
-  const handleRegisterSubmit = (e) => {
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setRegError("");
     if (!regName.trim() || !regEmail.trim() || !regPassword || !regConfirm) {
@@ -160,13 +162,41 @@ function AuthPage({ onLogin }) {
     }
     setRegLoading(true);
     setRegStatus("");
-    // NOTE: Real account creation is pending Firebase Authentication +
-    // Firestore integration. This is intentionally a holding state until
-    // that backend wiring is connected in a future update.
-    setTimeout(() => {
+    try {
+      // 1. Create Firebase Auth user
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        regEmail.trim(),
+        regPassword
+      );
+      // 2. Save profile to Firestore users collection
+      await setDoc(doc(db, "users", cred.user.uid), {
+        uid:       cred.user.uid,
+        name:      regName.trim(),
+        email:     regEmail.trim().toLowerCase(),
+        role:      "patient",          // default role for self-registration
+        createdAt: new Date().toISOString(),
+      });
+      setRegStatus("✅ Account created! You can now log in.");
+      // Auto-switch back to login after 1.5s
+      setTimeout(() => {
+        setShowRegister(false);
+        setEmail(regEmail.trim());
+      }, 1500);
+    } catch (err) {
+      const msg = err.message || "";
+      if (msg.includes("auth/email-already-in-use")) {
+        setRegError("This email is already registered. Please log in.");
+      } else if (msg.includes("auth/invalid-email")) {
+        setRegError("Please enter a valid email address.");
+      } else if (msg.includes("auth/weak-password")) {
+        setRegError("Password is too weak. Use at least 8 characters.");
+      } else {
+        setRegError(msg.replace("Firebase: ", "").replace(/\s*\(auth\/[^)]+\)/, "").trim());
+      }
+    } finally {
       setRegLoading(false);
-      setRegStatus("⏳ Waiting for connection to Firebase / Firestore… registration will be enabled once the backend is connected.");
-    }, 900);
+    }
   };
 
   return (
