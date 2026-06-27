@@ -7,7 +7,8 @@
 
 import { auth } from "./firebaseConfig";
 
-const BASE_URL = "https://asha-care-eight.vercel.app";
+const BASE_URL =
+  import.meta.env.VITE_API_URL || "https://asha-care-eight.vercel.app";
 
 // ── Core fetch helper — attaches Firebase ID token automatically ─────────────
 async function apiFetch(endpoint, body) {
