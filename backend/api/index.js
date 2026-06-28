@@ -660,5 +660,76 @@ app.post("/api/askHealthAssistant", async (req, res) => {
   return res.json({ response: responseText, source });
 });
 
+// =============================================================================
+//  10. SELF-REGISTER PATIENT  (POST /api/selfRegisterPatient)
+//  Called immediately after Firebase Auth signup on the client.
+//  Uses the new user's own ID token — no staff role required.
+//  Atomically creates both the `patients` doc and the `users` doc.
+// =============================================================================
+app.post("/api/selfRegisterPatient", async (req, res) => {
+  // Any valid Firebase token is accepted here — the caller just signed up
+  const decoded = await verifyToken(req);
+  if (!decoded) {
+    return sendError(res, { code: 401, message: "Authentication required. Please try again." });
+  }
+
+  const { name, email } = req.body || {};
+  const fieldErr = checkField(name, "name") || checkField(email, "email");
+  if (fieldErr) return sendError(res, fieldErr);
+
+  const uid = decoded.uid;
+
+  // Guard: don't double-create if called twice
+  const existingUser = await db.collection(COL.USERS).doc(uid).get();
+  if (existingUser.exists) {
+    const existing = existingUser.data();
+    return res.json({ success: true, patientId: existing.patientId, alreadyExists: true });
+  }
+
+  try {
+    const patientId = await nextPatientId();
+    const now       = new Date().toISOString().split("T")[0];
+
+    const patientDoc = {
+      id:         patientId,
+      name:       name.trim(),
+      email:      email.trim().toLowerCase(),
+      age:        "",
+      gender:     "",
+      blood:      "",
+      mobile:     "",
+      village:    "",
+      state:      "",
+      diseases:   "None",
+      registered: now,
+      createdAt:  FieldValue.serverTimestamp(),
+      createdBy:  "self_registration",
+    };
+
+    const userDoc = {
+      uid,
+      name:      name.trim(),
+      email:     email.trim().toLowerCase(),
+      role:      ROLES.PATIENT,
+      patientId,                           // links auth user → patient record
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: "self_registration",
+    };
+
+    // Atomic write — both succeed or both fail
+    const batch = db.batch();
+    batch.set(db.collection(COL.PATIENTS).doc(patientId), patientDoc);
+    batch.set(db.collection(COL.USERS).doc(uid), userDoc);
+    await batch.commit();
+
+    // Set custom claims so role-check works after next token refresh
+    await auth.setCustomUserClaims(uid, { role: ROLES.PATIENT });
+
+    return res.json({ success: true, patientId });
+  } catch (err) {
+    return sendError(res, { code: 500, message: "Registration failed: " + err.message });
+  }
+});
+
 // ── Export for Vercel ─────────────────────────────────────────────────────────
 module.exports = app;

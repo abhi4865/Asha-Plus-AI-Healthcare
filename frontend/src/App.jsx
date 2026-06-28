@@ -21,6 +21,7 @@ import {
   updatePatient,
   deletePatient,
   askHealthAssistant,
+  selfRegisterPatient,
 } from "./api";
 import "./App.css";
 
@@ -169,20 +170,29 @@ function AuthPage({ onLogin }) {
         regEmail.trim(),
         regPassword
       );
-      // 2. Save profile to Firestore users collection
-      await setDoc(doc(db, "users", cred.user.uid), {
-        uid:       cred.user.uid,
-        name:      regName.trim(),
-        email:     regEmail.trim().toLowerCase(),
-        role:      "patient",          // default role for self-registration
-        createdAt: new Date().toISOString(),
+
+      // 2. Get the fresh ID token immediately (before auth state propagates)
+      const idToken = await cred.user.getIdToken();
+
+      // 3. Call backend — atomically creates users doc + patients doc
+      //    Returns { patientId } e.g. "P001"
+      const result = await selfRegisterPatient(idToken, {
+        name:  regName.trim(),
+        email: regEmail.trim().toLowerCase(),
       });
-      setRegStatus("✅ Account created! You can now log in.");
-      // Auto-switch back to login after 1.5s
+
+      setRegStatus(
+        `✅ Account created! Your Patient ID is ${result.patientId}. You can now log in.`
+      );
+
+      // 4. Sign out so the login page starts fresh (custom claims need a token refresh)
+      await signOut(auth);
+
+      // Auto-switch back to login after 2s
       setTimeout(() => {
         setShowRegister(false);
         setEmail(regEmail.trim());
-      }, 1500);
+      }, 2000);
     } catch (err) {
       const msg = err.message || "";
       if (msg.includes("auth/email-already-in-use")) {

@@ -27,6 +27,27 @@ async function apiFetch(endpoint, body) {
   return data;
 }
 
+// ── Self-Registration (no existing session needed — uses fresh signup token) ──
+
+/**
+ * Called right after createUserWithEmailAndPassword succeeds.
+ * Pass the raw ID token from cred.user.getIdToken() directly,
+ * since auth.currentUser may not be set yet when this runs.
+ */
+export async function selfRegisterPatient(idToken, { name, email }) {
+  const res  = await fetch(`${BASE_URL}/api/selfRegisterPatient`, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      Authorization:   `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ name, email }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Registration failed");
+  return data; // { success, patientId }
+}
+
 // ── Auth & User Management ────────────────────────────────────────────────────
 
 export const createUser = (payload) =>
