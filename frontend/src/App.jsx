@@ -21,6 +21,7 @@ import {
   updatePatient,
   deletePatient,
   askHealthAssistant,
+  analyzeMedicalDocument,
   selfRegisterPatient,
   adminCreatePatient,
 } from "./api";
@@ -1698,24 +1699,12 @@ function ChatBot() {
     setLoad(true);
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system:
-            "You are Asha AI, a friendly and knowledgeable healthcare assistant for ASHA workers in rural India. Respond in simple English or Hindi mixed (Hinglish). Keep answers concise, warm, and medically responsible. Always advise to consult a doctor for serious issues.",
-          messages: [{ role: "user", content: input }],
-        }),
-      });
-      const data = await res.json();
-      const text = data.content?.map((c) => c.text || "").join("") || "Sorry, I couldn't process that.";
-      setMessages((m) => [...m, { from: "bot", text }]);
-    } catch {
+      const { response } = await askHealthAssistant(input);
+      setMessages((m) => [...m, { from: "bot", text: response }]);
+    } catch (err) {
       setMessages((m) => [
         ...m,
-        { from: "bot", text: "⚠️ Unable to connect to AI. Please try again." },
+        { from: "bot", text: `⚠️ ${err.message || "Unable to connect to AI. Please try again."}` },
       ]);
     } finally {
       setLoad(false);
@@ -1728,7 +1717,7 @@ function ChatBot() {
         <div className="card-header">
           <div className="card-title">
             🤖 AI Health Assistant
-            <span className="ai-badge">✨ Powered by Claude</span>
+            <span className="ai-badge">✨ AI Powered</span>
           </div>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
@@ -2610,27 +2599,10 @@ function hashText(str) {
   return h.toString(36);
 }
 
-async function callClaudeForAnalysis(systemPrompt, ocrText) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 650,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Here is the OCR-extracted text from the uploaded image. Analyze it and reply using the required structure only — no extra commentary:\n\n"""\n${ocrText}\n"""`,
-        },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error("The AI service didn't respond. Please try again in a moment.");
-  const data = await res.json();
-  const text = (data.content || []).map((c) => c.text || "").join("").trim();
-  if (!text) throw new Error("The AI didn't return a usable response. Please try again.");
-  return text;
+async function analyzeDocumentWithAI(systemPrompt, ocrText) {
+  const { response } = await analyzeMedicalDocument(systemPrompt, ocrText);
+  if (!response) throw new Error("The AI didn't return a usable response. Please try again.");
+  return response;
 }
 
 // ── Per-document-type configuration ─────────────────────────────────────────
@@ -2864,7 +2836,7 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
 
       // 4) Only the extracted TEXT is sent to the AI — never the image — to keep cost low
       setStatus("analyzing");
-      const result = await callClaudeForAnalysis(meta.systemPrompt, text);
+      const result = await analyzeDocumentWithAI(meta.systemPrompt, text);
       setAnalysis(result);
       setCache((prev) => ({ ...prev, [cacheKey]: result }));
       setStatus("done");
@@ -3044,7 +3016,7 @@ function MedicalAnalysis() {
               <ClipboardLogoIcon size={22} />
               Medical Analysis
             </span>
-            <span className="ai-badge">✨ OCR + Claude AI</span>
+            <span className="ai-badge">✨ OCR + AI Analysis</span>
           </div>
         </div>
         <div className="card-body" style={{ color: "var(--text-muted)", fontSize: 13, padding: "16px 24px" }}>

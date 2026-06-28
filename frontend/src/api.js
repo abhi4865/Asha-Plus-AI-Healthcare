@@ -107,3 +107,10 @@ export const deleteScheme = (schemeId) =>
 export const askHealthAssistant = (prompt) =>
   apiFetch("/api/askHealthAssistant", { prompt });
   // returns: { response: string, source: "gemini"|"groq"|"huggingface"|"cache" }
+
+// ── Medical Analysis (OCR text → AI summary) ──────────────────────────────────
+
+export const analyzeMedicalDocument = (systemPrompt, ocrText) =>
+  apiFetch("/api/analyzeMedicalDocument", { systemPrompt, ocrText });
+  // returns: { response: string, source: "gemini"|"groq"|"huggingface"|"cache" }
+  // Only the OCR-extracted TEXT is sent — never the image — to keep cost low.

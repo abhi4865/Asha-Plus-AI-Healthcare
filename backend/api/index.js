@@ -537,7 +537,9 @@ app.post("/api/deleteScheme", async (req, res) => {
 
 // =============================================================================
 //  9. ASHA AI HEALTH ASSISTANT  (POST /api/askHealthAssistant)
-//  Cache-first, 3-provider fallback: Gemini → Groq → HuggingFace
+//  10. MEDICAL DOCUMENT ANALYSIS (POST /api/analyzeMedicalDocument)
+//  Both share one cache-first, 3-provider fallback chain — all free tiers:
+//  Gemini → Groq → HuggingFace
 // =============================================================================
 
 const AI_SYSTEM_PROMPT =
@@ -558,25 +560,33 @@ function normalizePrompt(rawPrompt) {
   return slug ? `${slug}_${hash}` : hash;
 }
 
-async function askGemini(prompt) {
+/** md5 of arbitrary text — used to build cache keys for document analysis */
+function hashOf(text) {
+  return crypto.createHash("md5").update(text).digest("hex");
+}
+
+// ── Provider callers — every one takes (systemPrompt, userPrompt) and ───────
+// returns plain response text, or throws if that provider failed.
+
+async function callGemini(systemPrompt, userPrompt) {
   const ai     = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const result = await ai.models.generateContent({
     model:    "gemini-2.5-flash",
-    contents: prompt,
-    config:   { systemInstruction: AI_SYSTEM_PROMPT },
+    contents: userPrompt,
+    config:   { systemInstruction: systemPrompt },
   });
   const text = result.text;
   if (!text) throw new Error("Gemini returned an empty response");
   return text;
 }
 
-async function askGroq(prompt) {
+async function callGroq(systemPrompt, userPrompt) {
   const groq       = new Groq({ apiKey: process.env.GROQ_API_KEY });
   const completion = await groq.chat.completions.create({
     model:    "llama-3.3-70b-versatile",
     messages: [
-      { role: "system", content: AI_SYSTEM_PROMPT },
-      { role: "user",   content: prompt },
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userPrompt },
     ],
   });
   const text = completion.choices?.[0]?.message?.content;
@@ -584,19 +594,58 @@ async function askGroq(prompt) {
   return text;
 }
 
-async function askHuggingFace(prompt) {
+async function callHuggingFace(systemPrompt, userPrompt) {
   const hf         = new InferenceClient(process.env.HF_TOKEN);
   const completion = await hf.chatCompletion({
     model:      "meta-llama/Llama-3.1-8B-Instruct",
     messages:   [
-      { role: "system", content: AI_SYSTEM_PROMPT },
-      { role: "user",   content: prompt },
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userPrompt },
     ],
     max_tokens: 512,
   });
   const text = completion.choices?.[0]?.message?.content;
   if (!text) throw new Error("Hugging Face returned an empty response");
   return text;
+}
+
+// ── The fallback chain itself — reorder this array to change priority ───────
+const PROVIDER_CHAIN = [
+  { name: "gemini",      envKey: "GEMINI_API_KEY",    call: callGemini },
+  { name: "groq",        envKey: "GROQ_API_KEY",      call: callGroq },
+  { name: "huggingface", envKey: "HF_TOKEN",          call: callHuggingFace },
+];
+
+/**
+ * Tries every configured provider in PROVIDER_CHAIN order.
+ * Skips providers whose env var isn't set (instead of failing on them),
+ * so this works even with only 1 of the 4 keys configured.
+ * Returns { text, source }. Throws only if every configured provider failed.
+ */
+async function runWithFallback(systemPrompt, userPrompt) {
+  let lastErr = null;
+  let triedAny = false;
+
+  for (const provider of PROVIDER_CHAIN) {
+    if (!process.env[provider.envKey]) {
+      continue; // key not configured — skip silently, don't waste a call
+    }
+    triedAny = true;
+    try {
+      const text = await provider.call(systemPrompt, userPrompt);
+      return { text, source: provider.name };
+    } catch (err) {
+      console.warn(`${provider.name} failed:`, err.message);
+      lastErr = err;
+    }
+  }
+
+  if (!triedAny) {
+    throw new Error(
+      "No AI provider API keys are configured on the server (checked GEMINI_API_KEY, GROQ_API_KEY, HF_TOKEN)."
+    );
+  }
+  throw lastErr || new Error("All configured AI providers failed.");
 }
 
 app.post("/api/askHealthAssistant", async (req, res) => {
@@ -618,38 +667,23 @@ app.post("/api/askHealthAssistant", async (req, res) => {
     console.warn("Cache read failed — continuing to live AI call:", err.message);
   }
 
-  // ── Gemini → Groq → HuggingFace fallback chain ───────────────────────────
-  let responseText = null;
-  let source       = null;
-
+  // ── Gemini → Groq → HuggingFace fallback chain ──────────────────────────
+  let result;
   try {
-    responseText = await askGemini(userPrompt);
-    source       = "gemini";
+    result = await runWithFallback(AI_SYSTEM_PROMPT, userPrompt);
   } catch (e) {
-    console.warn("Gemini failed:", e.message);
-    try {
-      responseText = await askGroq(userPrompt);
-      source       = "groq";
-    } catch (e2) {
-      console.warn("Groq failed:", e2.message);
-      try {
-        responseText = await askHuggingFace(userPrompt);
-        source       = "huggingface";
-      } catch (e3) {
-        console.error("All 3 AI providers failed:", e3.message);
-        return sendError(res, {
-          code:    503,
-          message: "Asha AI couldn't reach any provider right now. Please try again shortly.",
-        });
-      }
-    }
+    console.error("All AI providers failed:", e.message);
+    return sendError(res, {
+      code:    503,
+      message: "Asha AI couldn't reach any provider right now. Please try again shortly.",
+    });
   }
 
   // ── Save to cache (best-effort — never blocks the response) ───────────────
   try {
     await cacheRef.set({
-      response:       responseText,
-      provider:       source,
+      response:       result.text,
+      provider:       result.source,
       originalPrompt: userPrompt,
       createdAt:      FieldValue.serverTimestamp(),
     });
@@ -657,7 +691,60 @@ app.post("/api/askHealthAssistant", async (req, res) => {
     console.warn("Cache write failed (response still returned):", err.message);
   }
 
-  return res.json({ response: responseText, source });
+  return res.json({ response: result.text, source: result.source });
+});
+
+app.post("/api/analyzeMedicalDocument", async (req, res) => {
+  const systemPrompt = (req.body?.systemPrompt || "").trim();
+  const ocrText      = (req.body?.ocrText || "").trim();
+
+  if (!systemPrompt || !ocrText) {
+    return sendError(res, {
+      code:    400,
+      message: 'Please send a non-empty "systemPrompt" and "ocrText".',
+    });
+  }
+
+  const userPrompt =
+    `Here is the OCR-extracted text from the uploaded image. Analyze it and ` +
+    `reply using the required structure only — no extra commentary:\n\n"""\n${ocrText}\n"""`;
+
+  // Cache by (systemPrompt + ocrText) so re-analyzing the same document
+  // (e.g. after a retry) doesn't spend a second AI call.
+  const cacheId  = "doc_" + hashOf(systemPrompt + "::" + ocrText);
+  const cacheRef = db.collection(COL.CACHE).doc(cacheId);
+
+  try {
+    const snap = await cacheRef.get();
+    if (snap.exists) {
+      return res.json({ response: snap.data().response, source: "cache" });
+    }
+  } catch (err) {
+    console.warn("Cache read failed — continuing to live AI call:", err.message);
+  }
+
+  let result;
+  try {
+    result = await runWithFallback(systemPrompt, userPrompt);
+  } catch (e) {
+    console.error("All AI providers failed for document analysis:", e.message);
+    return sendError(res, {
+      code:    503,
+      message: "AI analysis couldn't reach any provider right now. Please try again shortly.",
+    });
+  }
+
+  try {
+    await cacheRef.set({
+      response:  result.text,
+      provider:  result.source,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn("Cache write failed (response still returned):", err.message);
+  }
+
+  return res.json({ response: result.text, source: result.source });
 });
 
 // =============================================================================
