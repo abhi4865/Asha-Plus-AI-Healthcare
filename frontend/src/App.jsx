@@ -22,6 +22,7 @@ import {
   deletePatient,
   askHealthAssistant,
   selfRegisterPatient,
+  adminCreatePatient,
 } from "./api";
 import "./App.css";
 
@@ -862,14 +863,19 @@ function ManageAdminProfile({ adminProfile, setAdminProfile, onBack, toast, onLo
 
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 function AdminDashboard({ patients, user, onNav, onEditPatient, onViewPatient, onDeletePatient }) {
-  const male   = patients.filter((p) => p.gender === "Male").length;
-  const female = patients.filter((p) => p.gender === "Female").length;
+  const male         = patients.filter((p) => p.gender === "Male").length;
+  const female       = patients.filter((p) => p.gender === "Female").length;
+  const thisMonth    = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+  const newThisMonth = patients.filter(
+    (p) => (p.registered || "").slice(0, 7) === thisMonth
+  ).length;
+  const total = patients.length || 1;
 
   const stats = [
-    { label: "Total Patients",     value: patients.length, icon: "👥", cls: "purple", change: "+12%" },
-    { label: "New Registrations",  value: 8,               icon: "✅", cls: "green",  change: "+5 this month" },
-    { label: "Male Patients",      value: male,            icon: "👨", cls: "blue",   change: `${((male/patients.length)*100).toFixed(0)}%` },
-    { label: "Female Patients",    value: female,          icon: "👩", cls: "pink",   change: `${((female/patients.length)*100).toFixed(0)}%` },
+    { label: "Total Patients",    value: patients.length, icon: "👥", cls: "purple", change: `${patients.length} total` },
+    { label: "New Registrations", value: newThisMonth,    icon: "✅", cls: "green",  change: "registered this month" },
+    { label: "Male Patients",     value: male,            icon: "👨", cls: "blue",   change: `${((male/total)*100).toFixed(0)}% of total` },
+    { label: "Female Patients",   value: female,          icon: "👩", cls: "pink",   change: `${((female/total)*100).toFixed(0)}% of total` },
   ];
 
   return (
@@ -1062,9 +1068,15 @@ function VoiceField({ field, label, type = "text", placeholder, required, form, 
   );
 }
 
-function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultVillage = "" }) {
+function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultVillage = "", user = null }) {
   const [listening, setListening] = useState(null);
   const [voiceLang, setVoiceLang] = useState("en-IN"); // "en-IN" | "hi-IN"
+  const isStaff     = user?.role === "admin" || user?.role === "super_admin" || user?.role === "asha";
+  const [createLogin,     setCreateLogin]     = useState(false);
+  const [patientEmail,    setPatientEmail]    = useState(editPatient?.email || "");
+  const [patientPassword, setPatientPassword] = useState("@patient1234");
+  const [patientConfirm,  setPatientConfirm]  = useState("@patient1234");
+  const [showPw,          setShowPw]          = useState(false);
   const [uploading, setUploading] = useState(false);
   const [ocrFile, setOcrFile]     = useState(null);
   const [ocrPreview, setOcrPreview] = useState(null);
@@ -1156,28 +1168,40 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
     if (editPatient) {
       onSave?.({
         ...editPatient,
-        name: form.fullName || editPatient.name,
-        age: Number(form.age) || editPatient.age,
-        gender: form.gender || editPatient.gender,
-        mobile: form.mobile || editPatient.mobile,
-        email: form.email || editPatient.email,
-        village: form.village || editPatient.village,
-        state: form.state || editPatient.state,
-        blood: form.blood || editPatient.blood,
-        diseases: form.diseases || "None",
+        name:     form.fullName || editPatient.name,
+        age:      Number(form.age) || editPatient.age,
+        gender:   form.gender    || editPatient.gender,
+        mobile:   form.mobile    || editPatient.mobile,
+        email:    form.email     || editPatient.email,
+        village:  form.village   || editPatient.village,
+        state:    form.state     || editPatient.state,
+        blood:    form.blood     || editPatient.blood,
+        diseases: form.diseases  || "None",
       });
       return;
     }
+    // Staff-only login creation validation
+    if (isStaff && createLogin) {
+      if (!patientEmail.trim()) { toast("Enter patient email to create login.", "error"); return; }
+      if (patientPassword.length < 8) { toast("Password must be at least 8 characters.", "error"); return; }
+      if (patientPassword !== patientConfirm) { toast("Passwords do not match.", "error"); return; }
+    }
     const newPatient = {
-      id: `P${String(Math.floor(Math.random() * 900 + 100))}`,
-      name: form.fullName, age: Number(form.age) || 0, gender: form.gender,
-      blood: form.blood, mobile: form.mobile, email: form.email,
-      village: form.village, state: form.state, diseases: form.diseases || "None",
+      name:       form.fullName,
+      age:        Number(form.age) || 0,
+      gender:     form.gender,
+      blood:      form.blood,
+      mobile:     form.mobile,
+      email:      (isStaff && createLogin) ? patientEmail.trim() : (form.email || ""),
+      village:    form.village,
+      state:      form.state,
+      diseases:   form.diseases || "None",
       registered: new Date().toISOString().slice(0, 10),
+      ...(isStaff && createLogin && patientPassword
+        ? { _createLogin: true, _password: patientPassword }
+        : {}),
     };
-    toast("Patient registered successfully!", "success", `ID: ${newPatient.id}`);
     onSave?.(newPatient);
-    setTimeout(() => onNav("patients"), 1200);
   };
 
 
@@ -1378,6 +1402,81 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
                 <VoiceField field="emergencyNumber" label="Emergency Contact Number" type="tel" placeholder="10-digit" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
               </div>
             </div>
+
+            {/* Staff-only: Create Login Account */}
+            {isStaff && !editPatient && (
+              <div className="form-section" style={{ marginTop: 8 }}>
+                <div className="form-section-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>🔐 Patient Login Account</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 500, fontSize: 13, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={createLogin}
+                      onChange={(e) => setCreateLogin(e.target.checked)}
+                      style={{ accentColor: "#7c3aed", width: 16, height: 16 }}
+                    />
+                    Create login for this patient
+                  </label>
+                </div>
+                {createLogin && (
+                  <div className="form-grid" style={{ marginTop: 12 }}>
+                    <div className="form-group">
+                      <label className="form-label">Patient Email <span className="required">*</span></label>
+                      <input
+                        className="form-input"
+                        type="email"
+                        placeholder="patient@email.com"
+                        value={patientEmail}
+                        onChange={(e) => setPatientEmail(e.target.value)}
+                        required={createLogin}
+                      />
+                    </div>
+                    <div className="form-group" />
+                    <div className="form-group">
+                      <label className="form-label">Password <span className="required">*</span></label>
+                      <div className="input-wrapper">
+                        <input
+                          className="form-input has-action"
+                          type={showPw ? "text" : "password"}
+                          placeholder="Min. 8 characters"
+                          value={patientPassword}
+                          onChange={(e) => setPatientPassword(e.target.value)}
+                          required={createLogin}
+                        />
+                        <button type="button" className="voice-btn"
+                          onClick={() => setShowPw((v) => !v)}
+                          style={{ position: "absolute", right: 8 }}>
+                          {showPw ? "🙈" : "👁️"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Confirm Password <span className="required">*</span></label>
+                      <div className="input-wrapper">
+                        <input
+                          className="form-input has-action"
+                          type={showPw ? "text" : "password"}
+                          placeholder="Re-enter password"
+                          value={patientConfirm}
+                          onChange={(e) => setPatientConfirm(e.target.value)}
+                          required={createLogin}
+                        />
+                        {patientConfirm && (
+                          <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 16 }}>
+                            {patientPassword === patientConfirm ? "✅" : "❌"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="form-group full">
+                      <div style={{ background: "rgba(124,58,237,0.08)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#5b21b6" }}>
+                        💡 The patient can log in with this email and password to view their profile and visit history.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Submit */}
             <div className="flex gap-3" style={{ justifyContent: "flex-end", marginTop: 8 }}>
@@ -3903,7 +4002,14 @@ export default function App() {
   // ── Patient CRUD (wired to Vercel backend via api.js) ───────────────────────
   const addNewPatient = async (p) => {
     try {
-      const result = await addPatient(p);
+      const { _createLogin, _password, ...patientData } = p;
+      let result;
+      if (_createLogin && _password) {
+        // Staff is creating patient + login account in one step
+        result = await adminCreatePatient({ ...patientData, password: _password });
+      } else {
+        result = await addPatient(patientData);
+      }
       toast("Patient registered!", "success", `ID: ${result.patientId}`);
       setPage("patients");
     } catch (err) {
@@ -4030,6 +4136,7 @@ export default function App() {
           key="new"
           onNav={handleNav}
           toast={toast}
+          user={user}
           onSave={addNewPatient}
           defaultVillage={user.role === "asha" ? user.location : ""}
         />

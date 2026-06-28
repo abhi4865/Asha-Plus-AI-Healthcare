@@ -65,6 +65,11 @@ export const listUsers = () =>
 
 // ── Patients ─────────────────────────────────────────────────────────────────
 
+export const adminCreatePatient = (payload) =>
+  apiFetch("/api/adminCreatePatient", payload);
+  // payload: { name, email, password, mobile?, age?, gender?, village?, ... }
+  // Creates Firebase Auth user + users doc + patients doc atomically (admin/asha only)
+
 export const addPatient = (patient) =>
   apiFetch("/api/addPatient", patient);
   // patient: { name, mobile, age?, gender?, blood?, email?, village?, state?, diseases? }

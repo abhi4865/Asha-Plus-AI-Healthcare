@@ -732,4 +732,82 @@ app.post("/api/selfRegisterPatient", async (req, res) => {
 });
 
 // ── Export for Vercel ─────────────────────────────────────────────────────────
+// =============================================================================
+//  11. ADMIN CREATE PATIENT  (POST /api/adminCreatePatient)
+//  Admin / ASHA creates a full patient profile AND optionally a login account.
+//  If email + password supplied → Firebase Auth user + users doc + patients doc.
+//  If no password → patients doc only (same as addPatient).
+// =============================================================================
+app.post("/api/adminCreatePatient", async (req, res) => {
+  const decoded  = await verifyToken(req);
+  if (!decoded) return sendError(res, { code: 401, message: "Authentication required." });
+
+  const authErr = checkRole(decoded, ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.ASHA);
+  if (authErr) return sendError(res, authErr);
+
+  const { name, email, password, mobile, age, gender, blood,
+          village, state, diseases, allergies, medications,
+          emergencyName, emergencyNumber, registered } = req.body || {};
+
+  const fieldErr = checkField(name, "name");
+  if (fieldErr) return sendError(res, fieldErr);
+
+  try {
+    const patientId = await nextPatientId();
+    const today     = registered || new Date().toISOString().split("T")[0];
+
+    const patientDoc = {
+      id:               patientId,
+      name:             (name  || "").trim(),
+      email:            (email || "").trim().toLowerCase(),
+      mobile:           mobile  || "",
+      age:              Number(age) || 0,
+      gender:           gender  || "",
+      blood:            blood   || "",
+      village:          village || "",
+      state:            state   || "",
+      diseases:         diseases   || "None",
+      allergies:        allergies  || "",
+      medications:      medications || "",
+      emergencyName:    emergencyName   || "",
+      emergencyNumber:  emergencyNumber || "",
+      registered:       today,
+      createdAt:        FieldValue.serverTimestamp(),
+      createdBy:        decoded.uid,
+    };
+
+    if (email && password) {
+      // ── Create Firebase Auth user + users doc + patients doc atomically ──
+      const userRecord = await auth.createUser({ email: email.trim(), password, displayName: name.trim() });
+      await auth.setCustomUserClaims(userRecord.uid, { role: ROLES.PATIENT });
+
+      const userDoc = {
+        uid:       userRecord.uid,
+        name:      (name  || "").trim(),
+        email:     (email || "").trim().toLowerCase(),
+        role:      ROLES.PATIENT,
+        patientId,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: decoded.uid,
+      };
+
+      const batch = db.batch();
+      batch.set(db.collection(COL.PATIENTS).doc(patientId), patientDoc);
+      batch.set(db.collection(COL.USERS).doc(userRecord.uid), userDoc);
+      await batch.commit();
+
+      return res.json({ success: true, patientId, uid: userRecord.uid, loginCreated: true });
+    } else {
+      // ── No login — just create the patient record ──
+      await db.collection(COL.PATIENTS).doc(patientId).set(patientDoc);
+      return res.json({ success: true, patientId, loginCreated: false });
+    }
+  } catch (err) {
+    if (err.code === "auth/email-already-exists") {
+      return sendError(res, { code: 409, message: "A login account with this email already exists." });
+    }
+    return sendError(res, { code: 500, message: "Failed to create patient: " + err.message });
+  }
+});
+
 module.exports = app;
