@@ -1022,8 +1022,39 @@ function PatientsTable({ patients, onEdit, onView, onDelete }) {
 // phone photo of an Aadhaar/health card while keeping in-browser OCR responsive.
 const MAX_OCR_FILE_SIZE = 8 * 1024 * 1024; // 8 MB
 
+// ── VoiceField defined OUTSIDE RegisterPatient so React never remounts it on re-render ──
+function VoiceField({ field, label, type = "text", placeholder, required, form, set, listening, toggleVoice, voiceLang = "en-IN" }) {
+  return (
+    <div className="form-group">
+      <label className="form-label">
+        {label}{required && <span className="required">*</span>}
+      </label>
+      <div className="input-wrapper">
+        <input
+          className="form-input has-action"
+          type={type}
+          placeholder={placeholder}
+          value={form[field]}
+          onChange={(e) => set(field, e.target.value)}
+          required={required}
+        />
+        <button
+          type="button"
+          className={`voice-btn ${listening === field ? "listening" : ""}`}
+          onClick={() => toggleVoice(field)}
+          title={`Voice input (${voiceLang === "hi-IN" ? "हिंदी" : "English"})`}
+          style={{ position: "absolute", right: 8 }}
+        >
+          🎙️
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultVillage = "" }) {
   const [listening, setListening] = useState(null);
+  const [voiceLang, setVoiceLang] = useState("en-IN"); // "en-IN" | "hi-IN"
   const [uploading, setUploading] = useState(false);
   const [ocrFile, setOcrFile]     = useState(null);
   const [ocrPreview, setOcrPreview] = useState(null);
@@ -1060,7 +1091,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
       return;
     }
     const rec = new SR();
-    rec.lang = "hi-IN";
+    rec.lang = voiceLang;
     rec.onresult = (e) => {
       set(field, e.results[0][0].transcript);
       setListening(null);
@@ -1139,32 +1170,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
     setTimeout(() => onNav("patients"), 1200);
   };
 
-  const VoiceField = ({ field, label, type = "text", placeholder, required }) => (
-    <div className="form-group">
-      <label className="form-label">
-        {label}{required && <span className="required">*</span>}
-      </label>
-      <div className="input-wrapper">
-        <input
-          className="form-input has-action"
-          type={type}
-          placeholder={placeholder}
-          value={form[field]}
-          onChange={(e) => set(field, e.target.value)}
-          required={required}
-        />
-        <button
-          type="button"
-          className={`voice-btn ${listening === field ? "listening" : ""}`}
-          onClick={() => toggleVoice(field)}
-          title="Voice input"
-          style={{ position: "absolute", right: 8 }}
-        >
-          🎙️
-        </button>
-      </div>
-    </div>
-  );
+
 
   return (
     <div className="page-body">
@@ -1248,6 +1254,26 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
             <span className="card-title-hi">{editPatient ? "मरीज संपादित करें (Edit Patient)" : "मरीज पंजीकरण"}</span>
             <span className="ai-badge">{editPatient ? "✏️ Edit Mode" : "🎙️ Voice Input"}</span>
           </div>
+          <button
+            type="button"
+            onClick={() => setVoiceLang((l) => l === "en-IN" ? "hi-IN" : "en-IN")}
+            title="Toggle voice language"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 20,
+              border: "1.5px solid var(--purple-primary, #7c3aed)",
+              background: voiceLang === "hi-IN" ? "var(--purple-primary, #7c3aed)" : "transparent",
+              color: voiceLang === "hi-IN" ? "#fff" : "var(--purple-primary, #7c3aed)",
+              fontWeight: 700, fontSize: 12, cursor: "pointer",
+              transition: "all 0.2s",
+              whiteSpace: "nowrap",
+            }}
+          >
+            🎙️ {voiceLang === "hi-IN" ? "हिंदी" : "English"}
+            <span style={{ fontSize: 10, opacity: 0.75, fontWeight: 500, marginLeft: 4 }}>
+              → {voiceLang === "hi-IN" ? "Switch to English" : "हिंदी में बदलें"}
+            </span>
+          </button>
         </div>
         <div className="card-body">
           <form onSubmit={handleSubmit}>
@@ -1256,8 +1282,8 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
             <div className="form-section">
               <div className="form-section-title">👤 Personal Information</div>
               <div className="form-grid">
-                <VoiceField field="fullName" label="Full Name" placeholder="Enter full name" required />
-                <VoiceField field="age"    label="Age"    type="number" placeholder="e.g. 28" required />
+                <VoiceField field="fullName" label="Full Name" placeholder="Enter full name" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="age"    label="Age"    type="number" placeholder="e.g. 28" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
                 <div className="form-group">
                   <label className="form-label">Date of Birth</label>
                   <input
@@ -1283,8 +1309,8 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
                     ))}
                   </div>
                 </div>
-                <VoiceField field="mobile" label="Mobile Number" type="tel" placeholder="10-digit number" required />
-                <VoiceField field="email"  label="Email"    type="email" placeholder="patient@email.com" />
+                <VoiceField field="mobile" label="Mobile Number" type="tel" placeholder="10-digit number" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="email"  label="Email"    type="email" placeholder="patient@email.com" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
                 <div className="form-group">
                   <label className="form-label">Weight (kg)</label>
                   <input className="form-input" type="number" placeholder="e.g. 60"
@@ -1312,7 +1338,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
             <div className="form-section">
               <div className="form-section-title">📍 Address Details</div>
               <div className="form-grid">
-                <VoiceField field="village" label="Village / City" placeholder="e.g. Ghaziabad" required />
+                <VoiceField field="village" label="Village / City" placeholder="e.g. Ghaziabad" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} />
                 <div className="form-group">
                   <label className="form-label">State</label>
                   <select className="form-select" value={form.state}
@@ -1322,7 +1348,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
                     ))}
                   </select>
                 </div>
-                <VoiceField field="pin" label="PIN Code" type="number" placeholder="6-digit PIN" />
+                <VoiceField field="pin" label="PIN Code" type="number" placeholder="6-digit PIN" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
                 <div className="form-group full">
                   <label className="form-label">Full Address</label>
                   <textarea className="form-textarea" placeholder="House no., street, area…"
@@ -1335,11 +1361,11 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
             <div className="form-section">
               <div className="form-section-title">🏥 Medical Information</div>
               <div className="form-grid">
-                <VoiceField field="diseases"    label="Existing Diseases"   placeholder="e.g. Diabetes, TB" />
-                <VoiceField field="allergies"   label="Allergies"           placeholder="e.g. Penicillin" />
-                <VoiceField field="medications" label="Current Medications" placeholder="e.g. Metformin 500mg" />
-                <VoiceField field="emergencyName"   label="Emergency Contact Name"   placeholder="Relative name" />
-                <VoiceField field="emergencyNumber" label="Emergency Contact Number" type="tel" placeholder="10-digit" />
+                <VoiceField field="diseases"    label="Existing Diseases"   placeholder="e.g. Diabetes, TB" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="allergies"   label="Allergies"           placeholder="e.g. Penicillin" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="medications" label="Current Medications" placeholder="e.g. Metformin 500mg" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="emergencyName"   label="Emergency Contact Name"   placeholder="Relative name" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="emergencyNumber" label="Emergency Contact Number" type="tel" placeholder="10-digit" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
               </div>
             </div>
 
