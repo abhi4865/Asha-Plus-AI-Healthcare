@@ -1337,15 +1337,45 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
               <div className="form-section-title">👤 Personal Information</div>
               <div className="form-grid">
                 <VoiceField field="fullName" label="Full Name" placeholder="Enter full name" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
-                <VoiceField field="age"    label="Age"    type="number" placeholder="e.g. 28" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
                 <div className="form-group">
                   <label className="form-label">Date of Birth</label>
                   <input
                     className="form-input"
                     type="date"
                     value={form.dob}
-                    onChange={(e) => set("dob", e.target.value)}
+                    max={new Date().toISOString().split("T")[0]}
+                    onChange={(e) => {
+                      const dob = e.target.value;
+                      set("dob", dob);
+                      if (dob) {
+                        const today = new Date();
+                        const birth = new Date(dob);
+                        let age = today.getFullYear() - birth.getFullYear();
+                        const m = today.getMonth() - birth.getMonth();
+                        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                        if (age >= 0) set("age", String(age));
+                      } else {
+                        set("age", "");
+                      }
+                    }}
                   />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Age<span className="required">*</span></label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    placeholder="Auto-filled from DOB"
+                    value={form.age}
+                    onChange={(e) => set("age", e.target.value)}
+                    style={form.dob ? { background: "rgba(124,58,237,0.06)", color: "#5b21b6", fontWeight: 600 } : {}}
+                    title={form.dob ? "Auto-calculated from Date of Birth" : "Enter age manually or fill DOB above"}
+                  />
+                  {form.dob && (
+                    <span style={{ fontSize: 11, color: "#7c3aed", marginTop: 4, display: "block" }}>
+                      ✓ Auto-calculated from DOB
+                    </span>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">
@@ -1364,7 +1394,7 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
                   </div>
                 </div>
                 <VoiceField field="mobile" label="Mobile Number" type="tel" placeholder="10-digit number" required form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
-                <VoiceField field="email"  label="Email"    type="email" placeholder="patient@email.com" form={form} set={set} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
+                <VoiceField field="email"  label="Email"    type="email" placeholder="patient@email.com" form={form} set={(field, val) => { set(field, val); setPatientEmail(val); }} listening={listening} toggleVoice={toggleVoice} voiceLang={voiceLang} />
                 <div className="form-group">
                   <label className="form-label">Weight (kg)</label>
                   <input className="form-input" type="number" placeholder="e.g. 60"
@@ -1450,6 +1480,11 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
                         onChange={(e) => setPatientEmail(e.target.value)}
                         required={createLogin}
                       />
+                      {form.email && patientEmail === form.email && (
+                        <span style={{ fontSize: 11, color: "#7c3aed", marginTop: 4, display: "block" }}>
+                          ✓ Synced from Email field above
+                        </span>
+                      )}
                     </div>
                     <div className="form-group" />
                     <div className="form-group">
