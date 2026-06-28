@@ -91,7 +91,7 @@ function useToast() {
 }
 
 // ─── Auth Page ────────────────────────────────────────────────────────────────
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, onLoginStart, onLoginEnd }) {
   const [role, setRole]       = useState("admin");
   const [email, setEmail]     = useState("");
   const [password, setPass]   = useState("");
@@ -114,6 +114,9 @@ function AuthPage({ onLogin }) {
     setError("");
     setLoading(true);
     try {
+      // Signal to onAuthStateChanged that a manual login is in progress
+      onLoginStart?.();
+
       // 1. Sign in with Firebase Auth
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
@@ -128,7 +131,23 @@ function AuthPage({ onLogin }) {
 
       const profile = snap.data();
 
-      // 4. Hand the full profile to App so it sets the user state
+      // 4. Verify the selected login-type matches the actual Firestore role.
+      //    "admin" dropdown covers both admin and super_admin.
+      const roleMap = {
+        admin:   ["admin", "super_admin"],
+        asha:    ["asha"],
+        patient: ["patient"],
+      };
+      const allowedRoles = roleMap[role] ?? [role];
+      if (!allowedRoles.includes(profile.role)) {
+        await signOut(auth);
+        const labelMap = { admin: "Admin", asha: "ASHA Worker", patient: "Patient" };
+        throw new Error(
+          `This account is not an ${labelMap[role] ?? role}. Please select the correct login type.`
+        );
+      }
+
+      // 5. Hand the full profile to App so it sets the user state
       onLogin(profile);
     } catch (err) {
       // Convert Firebase error codes to friendly messages
@@ -143,6 +162,7 @@ function AuthPage({ onLogin }) {
         setError(msg.replace("Firebase: ", "").replace(/\s*\(auth\/[^)]+\)/, "").trim());
       }
     } finally {
+      onLoginEnd?.(); // always reset the manual-login flag
       setLoading(false);
     }
   };
@@ -3912,10 +3932,20 @@ export default function App() {
   const [authLoading,   setAuthLoading]   = useState(true); // prevents flash of login page
   const { toasts, add: toast, dismiss }  = useToast();
 
+  // Tracks when a manual login is in progress so onAuthStateChanged doesn't
+  // race ahead and set the user before the role check in handleSubmit runs.
+  const isManualLoginRef = useRef(false);
+
   // ── Restore session on page refresh ────────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        // A manual login (handleSubmit) is in progress — it will call onLogin
+        // itself after the role check. Don't touch user state here.
+        if (isManualLoginRef.current) {
+          setAuthLoading(false);
+          return;
+        }
         try {
           await firebaseUser.getIdToken(true); // refresh so role claim is present
           const snap = await getDoc(doc(db, "users", firebaseUser.uid));
@@ -3979,6 +4009,7 @@ export default function App() {
 
   // ── Auth helpers ────────────────────────────────────────────────────────────
   const login = (profile) => {
+    isManualLoginRef.current = false;
     setUser(profile);
     setPage(profile.role === "patient" ? "profile" : "dashboard");
   };
@@ -4061,7 +4092,11 @@ export default function App() {
   // ── Auth gate ───────────────────────────────────────────────────────────────
   if (!user) return (
     <>
-      <AuthPage onLogin={login} />
+      <AuthPage
+        onLogin={login}
+        onLoginStart={() => { isManualLoginRef.current = true; }}
+        onLoginEnd={()  => { isManualLoginRef.current = false; }}
+      />
       <Toast toasts={toasts} dismiss={dismiss} />
     </>
   );
