@@ -1167,22 +1167,76 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
     setOcrError("");
   };
 
-  const handleOCR = () => {
+  const handleOCR = async () => {
     if (!ocrFile) return;
     setUploading(true);
-    setTimeout(() => {
-      setForm((f) => ({
-        ...f,
-        fullName: "Kavita Singh",
-        age: "34",
-        mobile: "9811223344",
-        village: "Varanasi",
-        state: "Uttar Pradesh",
-        pin: "221001",
-      }));
+    setOcrError("");
+    try {
+      const Tesseract = await loadTesseract();
+      const worker = await Tesseract.createWorker("eng", 1, { ...TESSERACT_CDN });
+      const { data } = await worker.recognize(ocrFile);
+      await worker.terminate();
+      const text = (data?.text || "").trim();
+
+      if (!text) throw new Error("Couldn't read text from this image. Try a clearer, well-lit photo.");
+
+      const systemPrompt =
+        "You are a patient-registration assistant for Indian health records. " +
+        "The OCR text may come from an Aadhaar card, prescription, or other ID/medical document. " +
+        "Extract patient info and return ONLY a valid JSON object with exactly these keys " +
+        "(use empty string if not found):\n" +
+        '{ "fullName": "", "age": "", "dob": "", "gender": "", "mobile": "", "address": "", "village": "", "state": "", "pin": "", "blood": "", "diseases": "" }\n' +
+        "Rules: gender must be Male/Female/Other only. " +
+        "dob must be in YYYY-MM-DD format — convert from whatever format is printed (e.g. 17/11/2002 → 2002-11-17); leave empty if no date of birth is printed. " +
+        "age = digits only — calculate from dob if only a date of birth is printed and no age. " +
+        "address = the house no./street/area portion ONLY — do not repeat the village, state, or PIN, those go in their own fields. " +
+        "village = city/town/village name. " +
+        "state must be exactly one of: Uttar Pradesh, Delhi, Bihar, Rajasthan, Maharashtra, Other — pick the closest match, or \"Other\" if unsure. " +
+        "pin = the 6-digit Indian PIN code only, digits with no spaces or dashes. " +
+        "blood = A+/B-/O+/AB+ format. " +
+        "Return ONLY the JSON — no markdown, no explanation.";
+
+      const { response } = await analyzeMedicalDocument(systemPrompt, text);
+
+      try {
+        const parsed = JSON.parse((response || "").replace(/```json|```/g, "").trim());
+
+        // Native <input type="date"> silently rejects anything that isn't
+        // strict YYYY-MM-DD, so guard against a malformed value before storing it.
+        const dobVal = parsed.dob && /^\d{4}-\d{2}-\d{2}$/.test(parsed.dob) ? parsed.dob : "";
+        let ageVal = parsed.age || "";
+        if (dobVal) {
+          const today = new Date();
+          const birth = new Date(dobVal);
+          let calcAge = today.getFullYear() - birth.getFullYear();
+          const m = today.getMonth() - birth.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) calcAge--;
+          if (calcAge >= 0) ageVal = String(calcAge);
+        }
+
+        setForm((f) => ({
+          ...f,
+          fullName: parsed.fullName || f.fullName,
+          dob:      dobVal          || f.dob,
+          age:      ageVal          || f.age,
+          gender:   parsed.gender   || f.gender,
+          mobile:   parsed.mobile   || f.mobile,
+          address:  parsed.address  || f.address,
+          village:  parsed.village  || f.village,
+          state:    parsed.state    || f.state,
+          pin:      parsed.pin      || f.pin,
+          blood:    parsed.blood    || f.blood,
+          diseases: parsed.diseases || f.diseases,
+        }));
+        toast("Document scanned! Fields auto-filled ✨", "success");
+      } catch {
+        toast("Document scanned — please verify and complete any missing fields.", "warning");
+      }
+    } catch (err) {
+      setOcrError(err.message || "OCR failed. Please try again with a clearer image.");
+    } finally {
       setUploading(false);
-      toast("Document scanned! Fields auto-filled ✨", "success");
-    }, 1800);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -2959,6 +3013,19 @@ function GovtSchemes({ schemes, setSchemes, isAdmin, toast }) {
 
 // Tesseract.js is loaded from a CDN on first use instead of being bundled, so
 // no new dependency/file is needed — it attaches itself to `window.Tesseract`.
+//
+// Because it's loaded via a plain <script> tag (not npm/webpack), Tesseract.js
+// can't auto-resolve its own worker/core/lang file locations the way it would
+// in a bundled app — so we point it at the CDN explicitly. NOTE: corePath must
+// be a *directory* containing all 4 core build variants (lstm/simd/legacy) —
+// pointing it at one specific .js file stops Tesseract from picking the right
+// build for the user's device and is the actual reason OCR was failing.
+const TESSERACT_CDN = {
+  workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
+  corePath:   "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0",
+  langPath:   "https://tessdata.projectnaptha.com/4.0.0",
+};
+
 function loadTesseract() {
   if (typeof window !== "undefined" && window.Tesseract) {
     return Promise.resolve(window.Tesseract);
@@ -3237,6 +3304,7 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
       setStatus("ocr"); setOcrPct(0);
       const Tesseract = await loadTesseract();
       const worker = await Tesseract.createWorker("eng", 1, {
+        ...TESSERACT_CDN,
         logger: (m) => {
           if (m.status === "recognizing text") setOcrPct(Math.round(m.progress * 100));
         },
