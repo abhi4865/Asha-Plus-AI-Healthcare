@@ -1974,23 +1974,57 @@ function ChatBot() {
   const recognitionRef = useRef(null);
 
   // ── Live listener: last 5 questions from Firestore cache ──────────────────
+  // Strategy: try ordered (newest first). If that fails due to a missing Firestore
+  // index or a rules issue, fall back to unordered so something always shows.
   useEffect(() => {
-    const q = query(
-      collection(db, "cached_responses"),
-      orderBy("createdAt", "desc"),
-      limit(5)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const qs = snap.docs
-          .map((d) => d.data().originalPrompt)
-          .filter(Boolean);
-        setRecentQuestions(qs);
-      },
-      () => {} // silently ignore permission errors
-    );
-    return unsub;
+    let unsub = () => {};
+
+    const attachUnordered = () => {
+      const q = query(collection(db, "cached_responses"), limit(5));
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          const qs = snap.docs
+            .map((d) => d.data().originalPrompt)
+            .filter(Boolean);
+          setRecentQuestions(qs);
+        },
+        (err) => {
+          // If even the unordered query fails it is a rules problem.
+          // Log it so the developer can see the real error in the console.
+          console.error("[Asha AI] cached_responses read failed:", err.code, err.message);
+        }
+      );
+    };
+
+    const attachOrdered = () => {
+      const q = query(
+        collection(db, "cached_responses"),
+        orderBy("createdAt", "desc"),
+        limit(5)
+      );
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          const qs = snap.docs
+            .map((d) => d.data().originalPrompt)
+            .filter(Boolean);
+          setRecentQuestions(qs);
+        },
+        (err) => {
+          // "failed-precondition" = missing Firestore index for orderBy.
+          // "permission-denied"   = Firestore rules not yet deployed.
+          // Either way, fall back to unordered so recent questions still appear.
+          console.warn(
+            "[Asha AI] Ordered cache query failed (" + err.code + ") — falling back to unordered."
+          );
+          attachUnordered();
+        }
+      );
+    };
+
+    attachOrdered();
+    return () => unsub();
   }, []);
 
   useEffect(() => {
