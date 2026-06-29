@@ -14,6 +14,7 @@ import {
   query,
   orderBy,
   where,
+  limit,
 } from "firebase/firestore";
 import { auth, db } from "./firebaseConfig";
 import {
@@ -1965,11 +1966,32 @@ function ChatBot() {
   const [messages, setMessages] = useState([
     { from: "bot", text: BOT_GREET },
   ]);
-  const [input, setInput]   = useState("");
-  const [loading, setLoad]  = useState(false);
+  const [input, setInput]         = useState("");
+  const [loading, setLoad]        = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [recentQuestions, setRecentQuestions] = useState([]);
   const recognitionRef = useRef(null);
+
+  // ── Live listener: last 5 questions from Firestore cache ──────────────────
+  useEffect(() => {
+    const q = query(
+      collection(db, "cached_responses"),
+      orderBy("createdAt", "desc"),
+      limit(5)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const qs = snap.docs
+          .map((d) => d.data().originalPrompt)
+          .filter(Boolean);
+        setRecentQuestions(qs);
+      },
+      () => {} // silently ignore permission errors
+    );
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2092,7 +2114,7 @@ function ChatBot() {
         </div>
       </div>
 
-      {/* Suggested prompts */}
+      {/* ── Suggested Questions (hardcoded) ─────────────────────────────── */}
       <div className="mt-4">
         <div className="form-label mb-2">💡 Suggested Questions</div>
         <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
@@ -2112,6 +2134,70 @@ function ChatBot() {
           ))}
         </div>
       </div>
+
+      {/* ── Recent Questions (from Firestore cache) ──────────────────────── */}
+      {recentQuestions.length > 0 && (
+        <div className="mt-3">
+          <div
+            className="form-label mb-2"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            🕐 Recently Asked
+            <span
+              style={{
+                fontSize: 11,
+                background: "#EDE9FE",
+                color: "#7C3AED",
+                borderRadius: 20,
+                padding: "1px 8px",
+                fontWeight: 600,
+              }}
+            >
+              {recentQuestions.length}
+            </span>
+          </div>
+          <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+            {recentQuestions.map((q, idx) => (
+              <button
+                key={idx}
+                onClick={() => setInput(q)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  background: "#F5F3FF",
+                  border: "1px solid #DDD6FE",
+                  borderRadius: 20,
+                  padding: "5px 13px",
+                  fontSize: 12.5,
+                  color: "#5B21B6",
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  transition: "background 0.15s",
+                  maxWidth: 260,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#EDE9FE")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#F5F3FF")}
+                title={q}
+              >
+                <span style={{ fontSize: 13 }}>🔁</span>
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {q}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

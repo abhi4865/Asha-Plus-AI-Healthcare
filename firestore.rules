@@ -62,6 +62,15 @@ service cloud.firestore {
       }
     }
 
+    // ── AI Response Cache collection ──────────────────────────────────────────
+    // Frontend reads to show "Recently Asked" questions (onSnapshot, limit 5).
+    // Writes are done exclusively by the backend via Admin SDK — deny here.
+
+    match /cached_responses/{docId} {
+      allow read:  if isSignedIn();
+      allow write: if false;
+    }
+
     // ── Government Schemes collection ─────────────────────────────────────────
 
     match /govt_schemes/{schemeId} {
