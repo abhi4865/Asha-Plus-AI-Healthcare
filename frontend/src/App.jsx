@@ -3074,7 +3074,13 @@ function parseExpiryFromText(rawText) {
   const keyword = "(?:EXP(?:IRY)?(?:\\.|\\s*DATE)?|USE\\s*BY|BEST\\s*BEFORE)\\s*[:.\\-]?\\s*";
 
   // Numeric forms: "EXP 06/2027", "EXPIRY: 25-06-2027"
-  const numeric = text.match(new RegExp(keyword + "(\\d{1,2})[\\/\\-.](\\d{1,2}|\\d{4})(?:[\\/\\-.](\\d{2,4}))?"));
+  // NOTE: the middle group tries \d{4} BEFORE \d{1,2}. Regex alternation tries
+  // left-to-right and stops at the first option that lets the match succeed —
+  // with \d{1,2} listed first, "2027" would match only its first 2 digits
+  // ("20"), which then got promoted via the year<100 rule below into 2020 —
+  // i.e. almost every real-world MM/YYYY expiry in the 2020s was silently
+  // misread as "2020", which is why every pack looked "Expired" the same way.
+  const numeric = text.match(new RegExp(keyword + "(\\d{1,2})[\\/\\-.](\\d{4}|\\d{1,2})(?:[\\/\\-.](\\d{2,4}))?"));
   if (numeric) {
     const result = numeric[3]
       ? buildExpiryResult(parseInt(numeric[2], 10), parseInt(numeric[3], 10), parseInt(numeric[1], 10))
