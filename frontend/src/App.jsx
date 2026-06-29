@@ -1648,100 +1648,310 @@ function PatientDashboard({ user }) {
 function formatBotMessage(text) {
   if (!text) return null;
 
-  // Greeting message — render as plain text
-  if (!text.includes("##") && !text.startsWith("•") && !text.startsWith("⚠️")) {
-    return <span>{text}</span>;
+  // Plain greeting or emergency message — no special structure detected
+  const hasStructure =
+    text.includes("## ") || text.includes("### ") || text.includes("| ");
+  if (!hasStructure) {
+    return (
+      <span style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+        {text}
+      </span>
+    );
   }
 
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = text.split("\n");
   const elements = [];
-  const bullets = [];
+  let i = 0;
 
-  for (const line of lines) {
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const isTableRow  = (l) => l.trim().startsWith("|");
+  const isSeparator = (l) => /^\|[-| :]+\|$/.test(l.trim());
+
+  while (i < lines.length) {
+    const raw  = lines[i];
+    const line = raw.trim();
+
+    // Skip blank lines
+    if (!line) { i++; continue; }
+
+    // ── ## Main heading ──────────────────────────────────────────────────────
     if (line.startsWith("## ")) {
       elements.push(
         <div
-          key="ai-heading"
+          key={`h2-${i}`}
           style={{
-            fontWeight: 700,
-            fontSize: 14.5,
+            fontWeight: 800,
+            fontSize: 15.5,
             color: "var(--purple-primary)",
-            marginBottom: 8,
+            marginBottom: 10,
+            marginTop: 4,
             letterSpacing: 0.1,
+            lineHeight: 1.4,
           }}
         >
           {line.replace(/^##\s+/, "")}
         </div>
       );
-    } else if (line.startsWith("• ") || line.startsWith("- ")) {
-      bullets.push(line.replace(/^[•\-]\s+/, ""));
-    } else if (line.startsWith("⚠️")) {
-      // Flush bullets before caution block
-      if (bullets.length) {
-        elements.push(
-          <ul
-            key="ai-bullets"
-            style={{ margin: "4px 0 10px 0", paddingLeft: 20 }}
-          >
-            {bullets.splice(0).map((b, i) => (
-              <li
-                key={i}
-                style={{ marginBottom: 6, fontSize: 13.5, lineHeight: 1.6 }}
-              >
-                {b}
-              </li>
-            ))}
-          </ul>
-        );
-      }
+      i++; continue;
+    }
+
+    // ── ### Subheading ───────────────────────────────────────────────────────
+    if (line.startsWith("### ")) {
+      const sub = line.replace(/^###\s+/, "");
+      const isDoctor   = sub.includes("🚨");
+      const isMedicine = sub.includes("💊");
+      const isKey      = sub.includes("✅");
+      const color = isDoctor ? "#DC2626" : isMedicine ? "#7C3AED" : "#059669";
+      const bg    = isDoctor ? "#FEF2F2" : isMedicine ? "#F5F3FF" : "#F0FDF4";
+      const border = isDoctor ? "#FECACA" : isMedicine ? "#DDD6FE" : "#BBF7D0";
       elements.push(
         <div
-          key="ai-caution"
+          key={`h3-${i}`}
+          style={{
+            fontWeight: 700,
+            fontSize: 13.5,
+            color,
+            background: bg,
+            border: `1px solid ${border}`,
+            borderRadius: 8,
+            padding: "6px 12px",
+            marginTop: 12,
+            marginBottom: 6,
+          }}
+        >
+          {sub}
+        </div>
+      );
+      i++; continue;
+    }
+
+    // ── Markdown table (collect all rows) ────────────────────────────────────
+    if (isTableRow(line)) {
+      const tableLines = [];
+      while (i < lines.length && (isTableRow(lines[i]) || isSeparator(lines[i]))) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      // parse rows — split by | and strip empty edge cells
+      const rows = tableLines
+        .filter((l) => !isSeparator(l))
+        .map((l) =>
+          l
+            .split("|")
+            .slice(1, -1)
+            .map((cell) => cell.trim())
+        );
+      if (rows.length > 0) {
+        const [headerRow, ...bodyRows] = rows;
+        elements.push(
+          <div
+            key={`tbl-${i}`}
+            style={{ overflowX: "auto", marginTop: 6, marginBottom: 6 }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 12.5,
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              <thead>
+                <tr>
+                  {headerRow.map((h, ci) => (
+                    <th
+                      key={ci}
+                      style={{
+                        background: "#7C3AED",
+                        color: "#fff",
+                        padding: "7px 10px",
+                        textAlign: "left",
+                        fontWeight: 600,
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bodyRows.map((row, ri) => (
+                  <tr
+                    key={ri}
+                    style={{ background: ri % 2 === 0 ? "#F5F3FF" : "#fff" }}
+                  >
+                    {row.map((cell, ci) => (
+                      <td
+                        key={ci}
+                        style={{
+                          padding: "6px 10px",
+                          borderBottom: "1px solid #EDE9FE",
+                          fontSize: 12.5,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // ── Numbered list item  1. … ─────────────────────────────────────────────
+    if (/^\d+\.\s/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      elements.push(
+        <ol
+          key={`ol-${i}`}
+          style={{ margin: "4px 0 8px 0", paddingLeft: 22 }}
+        >
+          {items.map((item, idx) => (
+            <li
+              key={idx}
+              style={{
+                marginBottom: 6,
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: "#1F2937",
+              }}
+            >
+              {item}
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    // ── Bullet list item  - … ────────────────────────────────────────────────
+    if (line.startsWith("- ") || line.startsWith("• ")) {
+      const items = [];
+      while (
+        i < lines.length &&
+        (lines[i].trim().startsWith("- ") || lines[i].trim().startsWith("• "))
+      ) {
+        items.push(lines[i].trim().replace(/^[-•]\s+/, ""));
+        i++;
+      }
+      elements.push(
+        <ul
+          key={`ul-${i}`}
+          style={{ margin: "4px 0 8px 0", paddingLeft: 22 }}
+        >
+          {items.map((item, idx) => (
+            <li
+              key={idx}
+              style={{
+                marginBottom: 5,
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: "#1F2937",
+              }}
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // ── ⚠️ Disclaimer / warning line ─────────────────────────────────────────
+    if (line.startsWith("⚠️")) {
+      elements.push(
+        <div
+          key={`warn-${i}`}
           style={{
             background: "#FEF3C7",
             border: "1px solid #FCD34D",
             borderRadius: 8,
-            padding: "9px 13px",
-            fontSize: 13,
+            padding: "8px 12px",
+            fontSize: 12.5,
             color: "#92400E",
-            fontWeight: 500,
-            marginTop: 4,
+            fontWeight: 600,
+            marginTop: 6,
+            marginBottom: 4,
             lineHeight: 1.5,
           }}
         >
           {line}
         </div>
       );
-    } else {
-      // Fallback for old cached plain-text responses
+      i++; continue;
+    }
+
+    // ── Horizontal rule --- ───────────────────────────────────────────────────
+    if (/^-{3,}$/.test(line)) {
       elements.push(
-        <p
-          key={`ai-p-${elements.length}`}
-          style={{ margin: "4px 0", fontSize: 13.5, lineHeight: 1.6 }}
+        <hr
+          key={`hr-${i}`}
+          style={{ border: "none", borderTop: "1px solid #EDE9FE", margin: "10px 0" }}
+        />
+      );
+      i++; continue;
+    }
+
+    // ── "Do not self-medicate." closing line ─────────────────────────────────
+    if (
+      line.toLowerCase().includes("do not self-medicate") ||
+      line.toLowerCase().includes("स्वयं दवाई न लें")
+    ) {
+      elements.push(
+        <div
+          key={`close-${i}`}
+          style={{
+            fontWeight: 700,
+            fontSize: 13,
+            color: "#DC2626",
+            marginTop: 6,
+            fontStyle: "italic",
+          }}
         >
           {line}
-        </p>
+        </div>
       );
+      i++; continue;
     }
-  }
 
-  // Flush any remaining bullets (if ⚠️ line was missing)
-  if (bullets.length) {
+    // ── "See a doctor immediately if…" label ─────────────────────────────────
+    if (
+      line.toLowerCase().includes("see a doctor") ||
+      line.toLowerCase().includes("तुरंत डॉक्टर")
+    ) {
+      elements.push(
+        <div
+          key={`seeDoc-${i}`}
+          style={{ fontSize: 13, fontWeight: 600, color: "#DC2626", marginTop: 4 }}
+        >
+          {line}
+        </div>
+      );
+      i++; continue;
+    }
+
+    // ── Fallback: plain paragraph ─────────────────────────────────────────────
     elements.push(
-      <ul
-        key="ai-bullets-end"
-        style={{ margin: "4px 0 10px 0", paddingLeft: 20 }}
+      <p
+        key={`p-${i}`}
+        style={{ margin: "3px 0", fontSize: 13.5, lineHeight: 1.6, color: "#374151" }}
       >
-        {bullets.map((b, i) => (
-          <li
-            key={i}
-            style={{ marginBottom: 6, fontSize: 13.5, lineHeight: 1.6 }}
-          >
-            {b}
-          </li>
-        ))}
-      </ul>
+        {line}
+      </p>
     );
+    i++;
   }
 
   return elements.length ? <>{elements}</> : <span>{text}</span>;
