@@ -1104,6 +1104,8 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
   const [ocrPreview, setOcrPreview] = useState(null);
   const [ocrDragOver, setOcrDragOver] = useState(false);
   const [ocrError, setOcrError]   = useState("");
+  const ocrGalleryInputRef = useRef(null);
+  const ocrCameraInputRef  = useRef(null);
   const [form, setForm]           = useState(() =>
     editPatient
       ? {
@@ -1293,9 +1295,8 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
         </div>
         <div className="card-body">
           {!ocrFile ? (
-            <label
+            <div
               className={`upload-zone ${ocrDragOver ? "dragover" : ""}`}
-              style={{ display: "block" }}
               onDragOver={(e) => { e.preventDefault(); setOcrDragOver(true); }}
               onDragLeave={() => setOcrDragOver(false)}
               onDrop={(e) => {
@@ -1305,17 +1306,42 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
               }}
             >
               <input
+                ref={ocrGalleryInputRef}
                 type="file"
                 accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => acceptOcrFile(e.target.files?.[0])}
+              />
+              <input
+                ref={ocrCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
                 style={{ display: "none" }}
                 onChange={(e) => acceptOcrFile(e.target.files?.[0])}
               />
               <div className="upload-icon">📷</div>
               <div className="upload-title">Upload Aadhaar / Health Card</div>
               <div className="upload-sub">
-                Click to browse or drag a photo here · JPG or PNG, up to 8 MB
+                Drag a photo here, or choose an option below · JPG or PNG, up to 8 MB
               </div>
-            </label>
+              <div className="flex gap-2 mt-2" style={{ justifyContent: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn btn-outline-purple btn-sm"
+                  onClick={() => ocrGalleryInputRef.current?.click()}
+                >
+                  🖼️ Upload Document
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold btn-sm"
+                  onClick={() => ocrCameraInputRef.current?.click()}
+                >
+                  📷 Take Photo
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="medical-upload-active">
               <div className="medical-preview-row">
@@ -3275,6 +3301,8 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
   const [expiry, setExpiry]   = useState(null);
   const [fromCache, setFromCache] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const galleryInputRef = useRef(null);
+  const cameraInputRef  = useRef(null);
 
   const acceptFile = (f) => {
     if (!f) return;
@@ -3369,9 +3397,8 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
       <div className="card card-ai">
         <div className="card-body">
           {!file && (
-            <label
+            <div
               className={`upload-zone ${dragOver ? "dragover" : ""}`}
-              style={{ display: "block" }}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => {
@@ -3381,15 +3408,40 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
               }}
             >
               <input
+                ref={galleryInputRef}
                 type="file"
                 accept="image/*"
                 style={{ display: "none" }}
                 onChange={(e) => acceptFile(e.target.files?.[0])}
               />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={(e) => acceptFile(e.target.files?.[0])}
+              />
               <div className="upload-icon">{meta.icon}</div>
               <div className="upload-title">{meta.uploadLabel}</div>
-              <div className="upload-sub">Click to browse or drag a photo here · JPG or PNG</div>
-            </label>
+              <div className="upload-sub">Drag a photo here, or choose an option below · JPG or PNG</div>
+              <div className="flex gap-2 mt-2" style={{ justifyContent: "center", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="btn btn-outline-purple btn-sm"
+                  onClick={() => galleryInputRef.current?.click()}
+                >
+                  🖼️ Upload Document
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-gold btn-sm"
+                  onClick={() => cameraInputRef.current?.click()}
+                >
+                  📷 Take Photo
+                </button>
+              </div>
+            </div>
           )}
 
           {errorMsg && status === "error" && !file && (
