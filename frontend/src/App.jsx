@@ -1644,6 +1644,109 @@ function PatientDashboard({ user }) {
   );
 }
 
+// ─── AI Chatbot — structured message renderer ─────────────────────────────────
+function formatBotMessage(text) {
+  if (!text) return null;
+
+  // Greeting message — render as plain text
+  if (!text.includes("##") && !text.startsWith("•") && !text.startsWith("⚠️")) {
+    return <span>{text}</span>;
+  }
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const elements = [];
+  const bullets = [];
+
+  for (const line of lines) {
+    if (line.startsWith("## ")) {
+      elements.push(
+        <div
+          key="ai-heading"
+          style={{
+            fontWeight: 700,
+            fontSize: 14.5,
+            color: "var(--purple-primary)",
+            marginBottom: 8,
+            letterSpacing: 0.1,
+          }}
+        >
+          {line.replace(/^##\s+/, "")}
+        </div>
+      );
+    } else if (line.startsWith("• ") || line.startsWith("- ")) {
+      bullets.push(line.replace(/^[•\-]\s+/, ""));
+    } else if (line.startsWith("⚠️")) {
+      // Flush bullets before caution block
+      if (bullets.length) {
+        elements.push(
+          <ul
+            key="ai-bullets"
+            style={{ margin: "4px 0 10px 0", paddingLeft: 20 }}
+          >
+            {bullets.splice(0).map((b, i) => (
+              <li
+                key={i}
+                style={{ marginBottom: 6, fontSize: 13.5, lineHeight: 1.6 }}
+              >
+                {b}
+              </li>
+            ))}
+          </ul>
+        );
+      }
+      elements.push(
+        <div
+          key="ai-caution"
+          style={{
+            background: "#FEF3C7",
+            border: "1px solid #FCD34D",
+            borderRadius: 8,
+            padding: "9px 13px",
+            fontSize: 13,
+            color: "#92400E",
+            fontWeight: 500,
+            marginTop: 4,
+            lineHeight: 1.5,
+          }}
+        >
+          {line}
+        </div>
+      );
+    } else {
+      // Fallback for old cached plain-text responses
+      elements.push(
+        <p
+          key={`ai-p-${elements.length}`}
+          style={{ margin: "4px 0", fontSize: 13.5, lineHeight: 1.6 }}
+        >
+          {line}
+        </p>
+      );
+    }
+  }
+
+  // Flush any remaining bullets (if ⚠️ line was missing)
+  if (bullets.length) {
+    elements.push(
+      <ul
+        key="ai-bullets-end"
+        style={{ margin: "4px 0 10px 0", paddingLeft: 20 }}
+      >
+        {bullets.map((b, i) => (
+          <li
+            key={i}
+            style={{ marginBottom: 6, fontSize: 13.5, lineHeight: 1.6 }}
+          >
+            {b}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return elements.length ? <>{elements}</> : <span>{text}</span>;
+}
+
 // ─── AI Chatbot ───────────────────────────────────────────────────────────────
 const BOT_GREET =
   "नमस्ते! 🙏 I'm Asha AI, your health assistant. Ask me about symptoms, medicines, or general health tips!";
@@ -1739,7 +1842,7 @@ function ChatBot() {
             <div className="chatbot-messages">
               {messages.map((m, i) => (
                 <div key={i} className={`chat-msg ${m.from}`}>
-                  {m.text}
+                  {m.from === "bot" ? formatBotMessage(m.text) : m.text}
                 </div>
               ))}
               {loading && (
