@@ -57,6 +57,10 @@ export const createUser = (payload) =>
 export const updateUserRole = (uid, newRole) =>
   apiFetch("/api/updateUserRole", { uid, newRole });
 
+export const updateAshaWorker = (uid, updates) =>
+  apiFetch("/api/updateAshaWorker", { uid, updates });
+  // updates: { name?, mobile?, location?, email? } — super_admin only
+
 export const deleteAuthUser = (uid) =>
   apiFetch("/api/deleteAuthUser", { uid });
 

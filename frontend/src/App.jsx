@@ -27,6 +27,7 @@ import {
   adminCreatePatient,
   createUser,
   deleteAuthUser,
+  updateAshaWorker,
 } from "./api";
 import "./App.css";
 
@@ -124,8 +125,17 @@ function AuthPage({ onLogin, onLoginStart, onLoginEnd }) {
       // 1. Sign in with Firebase Auth
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-      // 2. Force token refresh so custom claims (role) are included
-      await cred.user.getIdToken(true);
+      // 2. Grab the ID token Firebase just minted for this sign-in.
+      //    NOTE: this used to call getIdToken(true), forcing an extra
+      //    network round-trip on every single login. A fresh
+      //    signInWithEmailAndPassword() call already returns a token with
+      //    up-to-date custom claims (role), so forcing a refresh here was
+      //    redundant and was the main cause of slow sign-in — especially
+      //    noticeable for ASHA workers on slower rural connections.
+      //    (A forced refresh is still correct in the session-restore path
+      //    below, where a *cached* token from an earlier session could be
+      //    stale if a role was changed mid-session.)
+      await cred.user.getIdToken();
 
       // 3. Fetch the user profile from Firestore
       const snap = await getDoc(doc(db, "users", cred.user.uid));
@@ -4247,30 +4257,32 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
                   placeholder="worker@ashacare.in"
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Password<span className="required">*</span></label>
-                <div style={{ position: "relative" }}>
-                  <input
-                    className="form-input has-action"
-                    type={showPass ? "text" : "password"}
-                    value={form.password}
-                    onChange={(e) => set("password", e.target.value)}
-                    placeholder="Set a login password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass((p) => !p)}
-                    style={{
-                      position: "absolute", right: 12, top: "50%",
-                      transform: "translateY(-50%)", background: "none",
+              {mode !== "edit" && (
+                <div className="form-group">
+                  <label className="form-label">Password<span className="required">*</span></label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      className="form-input has-action"
+                      type={showPass ? "text" : "password"}
+                      value={form.password}
+                      onChange={(e) => set("password", e.target.value)}
+                      placeholder="Set a login password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((p) => !p)}
+                      style={{
+                        position: "absolute", right: 12, top: "50%",
+                        transform: "translateY(-50%)", background: "none",
                       border: "none", cursor: "pointer", fontSize: 15,
                       color: "rgba(109,40,217,0.5)",
                     }}
-                  >
-                    {showPass ? "🙈" : "👁️"}
-                  </button>
+                    >
+                      {showPass ? "🙈" : "👁️"}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="form-group full">
                 <label className="form-label">Assigned Location (Village / City)<span className="required">*</span></label>
                 <input
@@ -4302,7 +4314,7 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
 // Admin adds ASHA workers tied to a location (e.g. Noida, Ghaziabad). Each
 // worker then logs in with role "asha" and gets the same dashboard/capabilities
 // as Admin, except this page — only the one Admin account can manage ASHA.
-function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
+function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canEdit }) {
   const [formModal, setFormModal]     = useState(null); // { mode: 'add' | 'edit', worker } | null
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [q, setQ] = useState("");
@@ -4313,17 +4325,20 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
 
   const handleFormSubmit = async (worker, mode) => {
     if (mode === "edit") {
-      // NOTE: there is no backend endpoint yet to update an existing ASHA
-      // worker's profile (name/mobile/location) — only account *creation*
-      // (createUser) and *role* changes (updateUserRole) exist server-side.
-      // This still only updates local state, so edits will NOT persist
-      // after a refresh/re-login until that endpoint is added.
-      setAshaWorkers((prev) => prev.map((w) => (w.id === worker.id ? { ...w, ...worker } : w)));
-      toast?.(
-        "Updated locally only",
-        "error",
-        "Editing isn't wired to the backend yet — this change will be lost on refresh."
-      );
+      const uid = formModal.worker?.uid;
+      if (!uid) {
+        toast?.("Can't update this worker", "error", "Missing account ID — try reopening the edit form.");
+        return;
+      }
+      await updateAshaWorker(uid, {
+        name:     worker.name,
+        mobile:   worker.mobile,
+        location: worker.location,
+        email:    worker.email,
+      });
+      // No manual setAshaWorkers push — the onSnapshot listener on `users`
+      // in App will reflect the update automatically.
+      toast?.("ASHA worker updated successfully!", "success", `${worker.name} • ${worker.location}`);
     } else {
       // This is the real fix: actually create the Firebase Auth user +
       // Firestore `users` doc via the backend, instead of only touching
@@ -4465,7 +4480,9 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
                       <td className="text-xs text-muted">{w.registered}</td>
                       <td>
                         <div className="flex gap-2">
-                          <button className="btn btn-outline-purple btn-sm" onClick={() => openEditForm(w)}>Edit</button>
+                          {canEdit && (
+                            <button className="btn btn-outline-purple btn-sm" onClick={() => openEditForm(w)}>Edit</button>
+                          )}
                           <button className="btn btn-danger btn-sm" onClick={() => requestDelete(w)}>Del</button>
                         </div>
                       </td>
@@ -4577,12 +4594,23 @@ export default function App() {
   }, []);
 
   // ── Real-time patients from Firestore ───────────────────────────────────────
+  // ASHA workers only ever see patients in their own village (see
+  // `visiblePatients` below), so for them we filter server-side too —
+  // downloading the entire patients collection just to throw most of it
+  // away client-side was the main thing making data load slowly right
+  // after an ASHA worker signed in. Sorting is done client-side here to
+  // avoid requiring a new Firestore composite index (village + registered).
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "patients"), orderBy("registered", "desc"));
-    return onSnapshot(q, (snap) =>
-      setPatients(snap.docs.map((d) => ({ ...d.data(), id: d.id })))
-    );
+    const isAsha = user.role === "asha" && user.location;
+    const q = isAsha
+      ? query(collection(db, "patients"), where("village", "==", user.location))
+      : query(collection(db, "patients"), orderBy("registered", "desc"));
+    return onSnapshot(q, (snap) => {
+      const docs = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      if (isAsha) docs.sort((a, b) => (b.registered || "").localeCompare(a.registered || ""));
+      setPatients(docs);
+    });
   }, [user]);
 
   // ── Real-time government schemes from Firestore ─────────────────────────────
@@ -4762,6 +4790,7 @@ export default function App() {
           patients={patients}
           toast={toast}
           onBack={() => setPage("dashboard")}
+          canEdit={user.role === "super_admin"}
         />
       );
       if (page === "patients") return (

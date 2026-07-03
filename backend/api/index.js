@@ -251,6 +251,59 @@ app.post("/api/updateUserRole", async (req, res) => {
 });
 
 // =============================================================================
+//  3b. UPDATE ASHA WORKER PROFILE  (POST /api/updateAshaWorker)
+//  super_admin ONLY — edits name/mobile/location/email for an existing ASHA
+//  worker. (updateUserRole above only changes *role*, not profile fields —
+//  this is the endpoint the "Edit ASHA Worker" form actually needs.)
+// =============================================================================
+app.post("/api/updateAshaWorker", async (req, res) => {
+  const decoded = await verifyToken(req);
+  const authErr = checkRole(decoded, ROLES.SUPER_ADMIN);
+  if (authErr) return sendError(res, authErr);
+
+  const { uid, updates } = req.body || {};
+  const fieldErr = checkField(uid, "uid") || checkField(updates, "updates");
+  if (fieldErr) return sendError(res, fieldErr);
+
+  const targetRef  = db.collection(COL.USERS).doc(uid);
+  const targetSnap = await targetRef.get();
+  if (!targetSnap.exists || targetSnap.data().role !== ROLES.ASHA) {
+    return sendError(res, { code: 404, message: "ASHA worker not found." });
+  }
+
+  const EDITABLE = ["name", "mobile", "location", "email"];
+  const safe     = {};
+  EDITABLE.forEach((k) => {
+    if (updates[k] !== undefined && String(updates[k]).trim() !== "") safe[k] = String(updates[k]).trim();
+  });
+
+  if (Object.keys(safe).length === 0) {
+    return sendError(res, { code: 400, message: "No valid fields provided to update." });
+  }
+
+  try {
+    // Keep the Firebase Auth record in sync so login (email) and the
+    // displayed name stay consistent with the Firestore profile.
+    const authUpdates = {};
+    if (safe.name)  authUpdates.displayName = safe.name;
+    if (safe.email) authUpdates.email       = safe.email;
+    if (Object.keys(authUpdates).length) {
+      await auth.updateUser(uid, authUpdates);
+    }
+
+    safe.updatedAt = FieldValue.serverTimestamp();
+    safe.updatedBy = decoded.uid;
+    await targetRef.update(safe);
+
+    return res.json({ success: true, message: "ASHA worker profile updated." });
+  } catch (err) {
+    if (err.code === "auth/email-already-exists") return sendError(res, { code: 409, message: "This email is already registered to another account." });
+    if (err.code === "auth/invalid-email")        return sendError(res, { code: 400, message: "Invalid email address." });
+    return sendError(res, { code: 500, message: "Failed to update ASHA worker: " + err.message });
+  }
+});
+
+// =============================================================================
 //  4. DELETE AUTH USER  (POST /api/deleteAuthUser)
 //  admin or super_admin.
 // =============================================================================
