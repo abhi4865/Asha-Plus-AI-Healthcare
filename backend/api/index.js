@@ -163,7 +163,7 @@ app.post("/api/createUser", async (req, res) => {
   const authErr = checkRole(decoded, ROLES.ADMIN, ROLES.SUPER_ADMIN);
   if (authErr) return sendError(res, authErr);
 
-  const { email, password, name, role, mobile = "", location = "" } = req.body || {};
+  const { email, password, name, role, mobile = "", location = "", locations } = req.body || {};
 
   const fieldErr =
     checkField(email,    "email")    ||
@@ -187,6 +187,19 @@ app.post("/api/createUser", async (req, res) => {
     });
   }
 
+  // ASHA workers can be assigned one, several, or ALL locations. Accepts the
+  // new `locations` array (preferred) and falls back to the legacy single
+  // `location` string for older clients.
+  let normalizedLocations = [];
+  if (role === ROLES.ASHA) {
+    normalizedLocations = Array.isArray(locations) && locations.length
+      ? Array.from(new Set(locations.map((l) => String(l).trim()).filter(Boolean)))
+      : (location ? [String(location).trim()] : []);
+    if (normalizedLocations.length === 0) {
+      return sendError(res, { code: 400, message: "At least one location (or ALL) is required for ASHA workers." });
+    }
+  }
+
   try {
     const userRecord = await auth.createUser({ email, password, displayName: name });
     await auth.setCustomUserClaims(userRecord.uid, { role });
@@ -201,8 +214,11 @@ app.post("/api/createUser", async (req, res) => {
       createdBy: decoded.uid,
     };
     if (role === ROLES.ASHA) {
-      profile.location = location;
-      profile.id       = `ASHA-${userRecord.uid.slice(0, 6).toUpperCase()}`;
+      profile.locations = normalizedLocations;
+      // Legacy single-location field, kept in sync so any old code/queries
+      // that still read `location` directly keep working. Left blank for "ALL".
+      profile.location  = normalizedLocations.includes("ALL") ? "" : normalizedLocations[0];
+      profile.id        = `ASHA-${userRecord.uid.slice(0, 6).toUpperCase()}`;
     }
     if (role === ROLES.PATIENT) {
       profile.id = `P-${userRecord.uid.slice(0, 6).toUpperCase()}`;
@@ -276,6 +292,18 @@ app.post("/api/updateAshaWorker", async (req, res) => {
   EDITABLE.forEach((k) => {
     if (updates[k] !== undefined && String(updates[k]).trim() !== "") safe[k] = String(updates[k]).trim();
   });
+
+  // `locations` (array) supersedes the legacy single `location` string above —
+  // it can hold multiple villages/cities, or ["ALL"] for full access.
+  if (Array.isArray(updates.locations)) {
+    const normalizedLocations = Array.from(
+      new Set(updates.locations.map((l) => String(l).trim()).filter(Boolean))
+    );
+    if (normalizedLocations.length > 0) {
+      safe.locations = normalizedLocations;
+      safe.location  = normalizedLocations.includes("ALL") ? "" : normalizedLocations[0];
+    }
+  }
 
   if (Object.keys(safe).length === 0) {
     return sendError(res, { code: 400, message: "No valid fields provided to update." });

@@ -603,7 +603,7 @@ function Sidebar({ user, active, onNav, mobileOpen, onOverlayClick, collapsed, o
                     : user.role === "super_admin"
                       ? "Super Admin"
                       : user.role === "asha"
-                        ? `ASHA Worker • ${user.location}`
+                        ? `ASHA Worker • ${formatLocationsLabel(user)}`
                         : "Patient"}
                 </div>
               </div>
@@ -632,7 +632,7 @@ function TopBar({ user, pageTitle, onLogout, onMenuToggle, onNav }) {
           <span className="notif-dot" />
         </div>
         {user.role === "asha" && (
-          <span className="badge badge-blue">📍 {user.location}</span>
+          <span className="badge badge-blue">📍 {formatLocationsLabel(user)}</span>
         )}
         {(user.role === "admin" || user.role === "super_admin") ? (
           <button
@@ -4149,45 +4149,114 @@ function PatientProfileView({ patient, history, setHistory, isAdmin, toast, onBa
   );
 }
 
+// ─── ASHA location helpers ────────────────────────────────────────────────────
+// ASHA workers can be assigned one, several, or ALL locations. Older accounts
+// only ever had a single `location` string — these helpers normalize both
+// shapes so the rest of the app can treat every worker the same way.
+const ALL_LOCATIONS = "ALL";
+
+function getAshaLocations(worker) {
+  if (!worker) return [];
+  if (Array.isArray(worker.locations) && worker.locations.length) return worker.locations;
+  if (worker.location) return [worker.location];
+  return [];
+}
+
+function ashaHasAllAccess(worker) {
+  return getAshaLocations(worker).includes(ALL_LOCATIONS);
+}
+
+// Does this ASHA worker have access to patients registered under `village`?
+function ashaCanAccessVillage(worker, village) {
+  const locs = getAshaLocations(worker);
+  if (locs.includes(ALL_LOCATIONS)) return true;
+  const v = (village || "").trim().toLowerCase();
+  return locs.some((l) => l.trim().toLowerCase() === v);
+}
+
+// Short human-readable summary, e.g. "Noida, Ghaziabad +2 more" or "All Locations".
+function formatLocationsLabel(worker, { max = 2 } = {}) {
+  const locs = getAshaLocations(worker);
+  if (!locs.length) return "No location set";
+  if (locs.includes(ALL_LOCATIONS)) return "All Locations";
+  if (locs.length <= max) return locs.join(", ");
+  return `${locs.slice(0, max).join(", ")} +${locs.length - max} more`;
+}
+
 // ─── ASHA Worker form helpers ────────────────────────────────────────────────
-const BLANK_ASHA_FORM = { name: "", email: "", password: "", mobile: "", location: "" };
+const BLANK_ASHA_FORM = { name: "", email: "", password: "", mobile: "", locations: [], allLocations: false };
 
 function ashaToForm(worker) {
+  const locs = getAshaLocations(worker);
+  const allLocations = locs.includes(ALL_LOCATIONS);
   return {
     name: worker.name || "",
     email: worker.email || "",
     password: worker.password || "",
     mobile: worker.mobile || "",
-    location: worker.location || "",
+    locations: allLocations ? [] : locs,
+    allLocations,
   };
 }
 
 function formToAsha(form, existingId, existingRegistered) {
+  const locations = form.allLocations
+    ? [ALL_LOCATIONS]
+    : Array.from(new Set(form.locations.map((l) => l.trim()).filter(Boolean)));
   return {
     id: existingId || `ASHA-${Date.now()}`,
     name: form.name.trim(),
     email: form.email.trim(),
     password: form.password.trim(),
     mobile: form.mobile.trim(),
-    location: form.location.trim(),
+    locations,
+    // Legacy single-location field, kept in sync for any old code/queries
+    // that still read `location` directly. Left blank for "all locations".
+    location: locations.includes(ALL_LOCATIONS) ? "" : (locations[0] || ""),
     registered: existingRegistered || new Date().toISOString().slice(0, 10),
   };
 }
 
 // ─── Add / Edit ASHA Worker modal (Admin only) ───────────────────────────────
-function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
+function AshaFormModal({ mode, initial, existingWorkers, locationSuggestions, onCancel, onSubmit }) {
+  const suggestions = locationSuggestions || [];
   const [form, setForm]       = useState(() => (initial ? ashaToForm(initial) : BLANK_ASHA_FORM));
   const [error, setError]     = useState("");
   const [showPass, setShowPass] = useState(false);
   const [saving, setSaving]   = useState(false);
+  const [locationInput, setLocationInput] = useState("");
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const addLocation = (raw) => {
+    const val = raw.trim();
+    if (!val) return;
+    setForm((f) =>
+      f.locations.some((l) => l.toLowerCase() === val.toLowerCase())
+        ? f
+        : { ...f, locations: [...f.locations, val] }
+    );
+    setLocationInput("");
+  };
+  const removeLocation = (val) =>
+    setForm((f) => ({ ...f, locations: f.locations.filter((l) => l !== val) }));
+  const handleLocationKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addLocation(locationInput);
+    } else if (e.key === "Backspace" && !locationInput && form.locations.length) {
+      removeLocation(form.locations[form.locations.length - 1]);
+    }
+  };
+  const toggleAllLocations = (checked) =>
+    setForm((f) => ({ ...f, allLocations: checked, locations: checked ? [] : f.locations }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const passwordRequired = mode !== "edit"; // editing doesn't change the login password
-    if (!form.name.trim() || !form.email.trim() || (passwordRequired && !form.password.trim()) || !form.mobile.trim() || !form.location.trim()) {
-      setError("Name, email, password, mobile and location are all required.");
+    const hasLocation = form.allLocations || form.locations.length > 0;
+    if (!form.name.trim() || !form.email.trim() || (passwordRequired && !form.password.trim()) || !form.mobile.trim() || !hasLocation) {
+      setError("Name, email, password, mobile and at least one location are all required.");
       return;
     }
     const emailLower = form.email.trim().toLowerCase();
@@ -4284,15 +4353,71 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
                 </div>
               )}
               <div className="form-group full">
-                <label className="form-label">Assigned Location (Village / City)<span className="required">*</span></label>
-                <input
-                  className="form-input"
-                  value={form.location}
-                  onChange={(e) => set("location", e.target.value)}
-                  placeholder="e.g. Noida"
-                />
+                <label className="form-label">Assigned Location(s)<span className="required">*</span></label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 13, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={form.allLocations}
+                    onChange={(e) => toggleAllLocations(e.target.checked)}
+                  />
+                  🌐 Give access to <strong>&nbsp;all locations&nbsp;</strong> (every patient, any village)
+                </label>
+
+                {!form.allLocations && (
+                  <>
+                    <div
+                      style={{
+                        display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
+                        border: "1px solid rgba(109,40,217,0.25)", borderRadius: 10, padding: "8px 10px",
+                        minHeight: 44,
+                      }}
+                    >
+                      {form.locations.map((loc) => (
+                        <span
+                          key={loc}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            background: "rgba(109,40,217,0.12)", color: "var(--text-dark)",
+                            borderRadius: 999, padding: "4px 10px", fontSize: 12.5, fontWeight: 600,
+                          }}
+                        >
+                          📍 {loc}
+                          <button
+                            type="button"
+                            onClick={() => removeLocation(loc)}
+                            aria-label={`Remove ${loc}`}
+                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "rgba(109,40,217,0.7)", lineHeight: 1 }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        className="form-input"
+                        list="asha-location-suggestions"
+                        value={locationInput}
+                        onChange={(e) => setLocationInput(e.target.value)}
+                        onKeyDown={handleLocationKeyDown}
+                        onBlur={() => locationInput.trim() && addLocation(locationInput)}
+                        placeholder={form.locations.length ? "Add another…" : "e.g. Noida"}
+                        style={{ flex: 1, minWidth: 120, border: "none", outline: "none", padding: "4px 2px" }}
+                      />
+                    </div>
+                    <datalist id="asha-location-suggestions">
+                      {suggestions
+                        .filter((s) => !form.locations.some((l) => l.toLowerCase() === s.toLowerCase()))
+                        .map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                    </datalist>
+                  </>
+                )}
+
                 <span className="textarea-hint">
-                  This ASHA worker will only see and manage patients registered under this location.
+                  {form.allLocations
+                    ? "This ASHA worker will see and manage patients from every location."
+                    : "Type a village/city and press Enter (or comma) to add it — add as many as needed. This worker will only see patients registered under the selected location(s)."}
                 </span>
               </div>
             </div>
@@ -4331,14 +4456,15 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
         return;
       }
       await updateAshaWorker(uid, {
-        name:     worker.name,
-        mobile:   worker.mobile,
-        location: worker.location,
-        email:    worker.email,
+        name:      worker.name,
+        mobile:    worker.mobile,
+        location:  worker.location,
+        locations: worker.locations,
+        email:     worker.email,
       });
       // No manual setAshaWorkers push — the onSnapshot listener on `users`
       // in App will reflect the update automatically.
-      toast?.("ASHA worker updated successfully!", "success", `${worker.name} • ${worker.location}`);
+      toast?.("ASHA worker updated successfully!", "success", `${worker.name} • ${formatLocationsLabel(worker, { max: 3 })}`);
     } else {
       // This is the real fix: actually create the Firebase Auth user +
       // Firestore `users` doc via the backend, instead of only touching
@@ -4346,14 +4472,15 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
       // in App will pick up the new doc automatically, so we don't need to
       // (and shouldn't) manually push `worker` into ashaWorkers here.
       await createUser({
-        email:    worker.email,
-        password: worker.password,
-        name:     worker.name,
-        role:     "asha",
-        mobile:   worker.mobile,
-        location: worker.location,
+        email:     worker.email,
+        password:  worker.password,
+        name:      worker.name,
+        role:      "asha",
+        mobile:    worker.mobile,
+        location:  worker.location,
+        locations: worker.locations,
       });
-      toast?.("ASHA worker added successfully!", "success", `${worker.name} • ${worker.location}`);
+      toast?.("ASHA worker added successfully!", "success", `${worker.name} • ${formatLocationsLabel(worker, { max: 3 })}`);
     }
     setFormModal(null);
   };
@@ -4371,25 +4498,39 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
         await deleteAuthUser(target.uid);
       }
       setAshaWorkers((prev) => prev.filter((w) => w.id !== target.id));
-      toast?.("ASHA worker removed", "success", `${target.name} (${target.location})`);
+      toast?.("ASHA worker removed", "success", `${target.name} (${formatLocationsLabel(target, { max: 3 })})`);
     } catch (err) {
       toast?.("Failed to remove ASHA worker", "error", err.message || "Please try again.");
     }
   };
 
-  const patientsFor = (location) =>
-    patients.filter(
-      (p) => (p.village || "").trim().toLowerCase() === (location || "").trim().toLowerCase()
-    ).length;
+  const patientsFor = (worker) => {
+    if (ashaHasAllAccess(worker)) return patients.length;
+    const locs = getAshaLocations(worker).map((l) => l.trim().toLowerCase());
+    return patients.filter((p) => locs.includes((p.village || "").trim().toLowerCase())).length;
+  };
+
+  // Suggestions for the location tag input — every distinct village already
+  // in use, either from existing patients or other ASHA workers' assignments.
+  const locationSuggestions = Array.from(
+    new Set([
+      ...patients.map((p) => (p.village || "").trim()).filter(Boolean),
+      ...ashaWorkers.flatMap((w) => getAshaLocations(w).filter((l) => l !== ALL_LOCATIONS)).map((l) => l.trim()),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
 
   const query = q.trim().toLowerCase();
   const filtered = query
     ? ashaWorkers.filter(
-        (w) => w.name.toLowerCase().includes(query) || w.location.toLowerCase().includes(query)
+        (w) =>
+          w.name.toLowerCase().includes(query) ||
+          getAshaLocations(w).some((l) => l.toLowerCase().includes(query))
       )
     : ashaWorkers;
 
-  const locationsCovered = new Set(ashaWorkers.map((w) => w.location.trim().toLowerCase())).size;
+  const locationsCovered = new Set(
+    ashaWorkers.flatMap((w) => getAshaLocations(w).filter((l) => l !== ALL_LOCATIONS).map((l) => l.trim().toLowerCase()))
+  ).size;
 
   return (
     <div className="page-body">
@@ -4474,9 +4615,19 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
                         </div>
                       </td>
                       <td><span className="badge badge-purple">{w.id}</span></td>
-                      <td><span className="badge badge-blue">📍 {w.location}</span></td>
+                      <td>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 220 }}>
+                          {ashaHasAllAccess(w) ? (
+                            <span className="badge badge-blue">🌐 All Locations</span>
+                          ) : (
+                            getAshaLocations(w).map((l) => (
+                              <span key={l} className="badge badge-blue">📍 {l}</span>
+                            ))
+                          )}
+                        </div>
+                      </td>
                       <td className="text-sm">{w.mobile}</td>
-                      <td><span className="badge badge-green">{patientsFor(w.location)} patients</span></td>
+                      <td><span className="badge badge-green">{patientsFor(w)} patients</span></td>
                       <td className="text-xs text-muted">{w.registered}</td>
                       <td>
                         <div className="flex gap-2">
@@ -4501,6 +4652,7 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
           mode={formModal.mode}
           initial={formModal.worker}
           existingWorkers={ashaWorkers}
+          locationSuggestions={locationSuggestions}
           onCancel={closeForm}
           onSubmit={handleFormSubmit}
         />
@@ -4515,8 +4667,8 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack, canE
               <button className="modal-close" onClick={cancelDelete}>✕</button>
             </div>
             <div className="modal-body">
-              Are you sure you want to remove <strong>{deleteTarget.name}</strong> ({deleteTarget.location})?
-              They will no longer be able to log in, and this location will need a new ASHA worker assigned.
+              Are you sure you want to remove <strong>{deleteTarget.name}</strong> ({formatLocationsLabel(deleteTarget, { max: 3 })})?
+              They will no longer be able to log in, and {getAshaLocations(deleteTarget).length > 1 ? "these locations" : "this location"} will need a new ASHA worker assigned.
               This action cannot be undone.
             </div>
             <div className="modal-footer">
@@ -4602,13 +4754,25 @@ export default function App() {
   // avoid requiring a new Firestore composite index (village + registered).
   useEffect(() => {
     if (!user) return;
-    const isAsha = user.role === "asha" && user.location;
-    const q = isAsha
-      ? query(collection(db, "patients"), where("village", "==", user.location))
+    const isAsha        = user.role === "asha";
+    const hasAllAccess  = isAsha && ashaHasAllAccess(user);
+    const ashaLocations = isAsha ? getAshaLocations(user) : [];
+    // Firestore's `in` operator only supports up to 10 values — for workers
+    // assigned more locations than that we fall back to fetching everything
+    // and filtering client-side below (rare case, but keeps things working).
+    const useServerFilter = isAsha && !hasAllAccess && ashaLocations.length > 0 && ashaLocations.length <= 10;
+
+    const q = useServerFilter
+      ? query(collection(db, "patients"), where("village", "in", ashaLocations))
       : query(collection(db, "patients"), orderBy("registered", "desc"));
+
     return onSnapshot(q, (snap) => {
-      const docs = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
-      if (isAsha) docs.sort((a, b) => (b.registered || "").localeCompare(a.registered || ""));
+      let docs = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+      if (isAsha && !hasAllAccess) {
+        const locSet = new Set(ashaLocations.map((l) => l.trim().toLowerCase()));
+        docs = docs.filter((p) => locSet.has((p.village || "").trim().toLowerCase()));
+      }
+      if (useServerFilter) docs.sort((a, b) => (b.registered || "").localeCompare(a.registered || ""));
       setPatients(docs);
     });
   }, [user]);
@@ -4742,11 +4906,10 @@ export default function App() {
     </>
   );
 
-  // ── ASHA workers only see patients in their assigned village ────────────────
+  // ── ASHA workers only see patients in their assigned location(s) ───────────
+  // (unless they've been granted "all locations" access)
   const visiblePatients = user.role === "asha"
-    ? patients.filter(
-        (p) => (p.village || "").trim().toLowerCase() === (user.location || "").trim().toLowerCase()
-      )
+    ? patients.filter((p) => ashaCanAccessVillage(user, p.village))
     : patients;
 
   // ── Page router ─────────────────────────────────────────────────────────────
@@ -4815,7 +4978,11 @@ export default function App() {
           toast={toast}
           user={user}
           onSave={addNewPatient}
-          defaultVillage={user.role === "asha" ? user.location : ""}
+          defaultVillage={
+            user.role === "asha" && !ashaHasAllAccess(user) && getAshaLocations(user).length === 1
+              ? getAshaLocations(user)[0]
+              : ""
+          }
         />
       );
       if (page === "edit-patient") return (
