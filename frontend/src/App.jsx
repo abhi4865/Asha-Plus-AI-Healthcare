@@ -25,6 +25,8 @@ import {
   analyzeMedicalDocument,
   selfRegisterPatient,
   adminCreatePatient,
+  createUser,
+  deleteAuthUser,
 } from "./api";
 import "./App.css";
 
@@ -4167,12 +4169,14 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
   const [form, setForm]       = useState(() => (initial ? ashaToForm(initial) : BLANK_ASHA_FORM));
   const [error, setError]     = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [saving, setSaving]   = useState(false);
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.email.trim() || !form.password.trim() || !form.mobile.trim() || !form.location.trim()) {
+    const passwordRequired = mode !== "edit"; // editing doesn't change the login password
+    if (!form.name.trim() || !form.email.trim() || (passwordRequired && !form.password.trim()) || !form.mobile.trim() || !form.location.trim()) {
       setError("Name, email, password, mobile and location are all required.");
       return;
     }
@@ -4185,7 +4189,18 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
       return;
     }
     setError("");
-    onSubmit(formToAsha(form, initial?.id, initial?.registered));
+    setSaving(true);
+    try {
+      // onSubmit (in ManageAsha) actually hits the backend — awaiting here
+      // keeps the modal open with an error message if that call fails,
+      // instead of closing and silently losing the account.
+      await onSubmit(formToAsha(form, initial?.id, initial?.registered), mode);
+    } catch (err) {
+      setError(err.message || "Something went wrong. Please try again.");
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
   };
 
   return (
@@ -4272,9 +4287,9 @@ function AshaFormModal({ mode, initial, existingWorkers, onCancel, onSubmit }) {
           </div>
 
           <div className="modal-footer">
-            <button type="button" className="btn btn-outline-purple" onClick={onCancel}>Cancel</button>
-            <button type="submit" className="btn btn-gold">
-              {mode === "edit" ? "Update ASHA Worker" : "Add ASHA Worker"}
+            <button type="button" className="btn btn-outline-purple" onClick={onCancel} disabled={saving}>Cancel</button>
+            <button type="submit" className="btn btn-gold" disabled={saving}>
+              {saving ? "Saving…" : mode === "edit" ? "Update ASHA Worker" : "Add ASHA Worker"}
             </button>
           </div>
         </form>
@@ -4296,12 +4311,33 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
   const openEditForm = (worker) => setFormModal({ mode: "edit", worker });
   const closeForm    = () => setFormModal(null);
 
-  const handleFormSubmit = (worker) => {
-    if (formModal.mode === "edit") {
-      setAshaWorkers((prev) => prev.map((w) => (w.id === worker.id ? worker : w)));
-      toast?.("ASHA worker updated successfully!", "success", `${worker.name} • ${worker.location}`);
+  const handleFormSubmit = async (worker, mode) => {
+    if (mode === "edit") {
+      // NOTE: there is no backend endpoint yet to update an existing ASHA
+      // worker's profile (name/mobile/location) — only account *creation*
+      // (createUser) and *role* changes (updateUserRole) exist server-side.
+      // This still only updates local state, so edits will NOT persist
+      // after a refresh/re-login until that endpoint is added.
+      setAshaWorkers((prev) => prev.map((w) => (w.id === worker.id ? { ...w, ...worker } : w)));
+      toast?.(
+        "Updated locally only",
+        "error",
+        "Editing isn't wired to the backend yet — this change will be lost on refresh."
+      );
     } else {
-      setAshaWorkers((prev) => [...prev, worker]);
+      // This is the real fix: actually create the Firebase Auth user +
+      // Firestore `users` doc via the backend, instead of only touching
+      // local React state. The onSnapshot listener on `users` (role=="asha")
+      // in App will pick up the new doc automatically, so we don't need to
+      // (and shouldn't) manually push `worker` into ashaWorkers here.
+      await createUser({
+        email:    worker.email,
+        password: worker.password,
+        name:     worker.name,
+        role:     "asha",
+        mobile:   worker.mobile,
+        location: worker.location,
+      });
       toast?.("ASHA worker added successfully!", "success", `${worker.name} • ${worker.location}`);
     }
     setFormModal(null);
@@ -4309,10 +4345,21 @@ function ManageAsha({ ashaWorkers, setAshaWorkers, patients, toast, onBack }) {
 
   const requestDelete = (worker) => setDeleteTarget(worker);
   const cancelDelete  = () => setDeleteTarget(null);
-  const confirmDeleteWorker = () => {
-    setAshaWorkers((prev) => prev.filter((w) => w.id !== deleteTarget.id));
-    toast?.("ASHA worker removed", "success", `${deleteTarget.name} (${deleteTarget.location})`);
+  const confirmDeleteWorker = async () => {
+    const target = deleteTarget;
     setDeleteTarget(null);
+    try {
+      // Actually revoke the Firebase Auth account + Firestore doc.
+      // Falls back to local-only removal if this worker predates the fix
+      // and has no `uid` (e.g. leftover mock/local entries).
+      if (target.uid) {
+        await deleteAuthUser(target.uid);
+      }
+      setAshaWorkers((prev) => prev.filter((w) => w.id !== target.id));
+      toast?.("ASHA worker removed", "success", `${target.name} (${target.location})`);
+    } catch (err) {
+      toast?.("Failed to remove ASHA worker", "error", err.message || "Please try again.");
+    }
   };
 
   const patientsFor = (location) =>
