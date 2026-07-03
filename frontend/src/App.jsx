@@ -2063,6 +2063,7 @@ function ChatBot() {
   const [loading, setLoad]        = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [voiceLang, setVoiceLang] = useState("en-IN"); // "en-IN" | "hi-IN" — must be picked BEFORE starting the mic
   const [recentQuestions, setRecentQuestions] = useState([]);
   const recognitionRef = useRef(null);
 
@@ -2120,13 +2121,16 @@ function ChatBot() {
     return () => unsub();
   }, []);
 
+  // Rebuilt every time voiceLang changes, so the mic always listens in
+  // whichever language the user picked BEFORE tapping the mic — no more
+  // mixed-up Hindi/English recognition from a fixed "en-IN" setting.
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { setVoiceSupported(false); return; }
     const rec = new SpeechRecognition();
     rec.continuous = false;
     rec.interimResults = true;
-    rec.lang = "en-IN"; // understands Hindi/English mix reasonably well in most browsers
+    rec.lang = voiceLang;
     rec.onresult = (e) => {
       const transcript = Array.from(e.results).map((r) => r[0].transcript).join("");
       setInput(transcript);
@@ -2135,7 +2139,7 @@ function ChatBot() {
     rec.onerror = () => setListening(false);
     recognitionRef.current = rec;
     return () => { try { rec.stop(); } catch {} };
-  }, []);
+  }, [voiceLang]);
 
   const toggleVoice = () => {
     if (!recognitionRef.current) return;
@@ -2215,6 +2219,33 @@ function ChatBot() {
               )}
             </div>
 
+            {voiceSupported && (
+              <div className="voice-lang-row" style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "6px 12px", fontSize: 13,
+              }}>
+                <span style={{ opacity: 0.7 }}>🎙️ Voice language:</span>
+                <button
+                  type="button"
+                  disabled={listening}
+                  onClick={() => setVoiceLang("en-IN")}
+                  className={`btn-tab ${voiceLang === "en-IN" ? "active" : ""}`}
+                  title="Speak in English"
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  disabled={listening}
+                  onClick={() => setVoiceLang("hi-IN")}
+                  className={`btn-tab ${voiceLang === "hi-IN" ? "active" : ""}`}
+                  title="हिंदी में बोलें"
+                >
+                  हिंदी
+                </button>
+              </div>
+            )}
+
             <div className="chatbot-input-area">
               <input
                 className="chatbot-input"
@@ -2228,7 +2259,7 @@ function ChatBot() {
                   type="button"
                   className={`voice-btn ${listening ? "listening" : ""}`}
                   onClick={toggleVoice}
-                  title={listening ? "Stop listening" : "Ask by voice"}
+                  title={listening ? "Stop listening" : `Ask by voice (${voiceLang === "hi-IN" ? "हिंदी" : "English"})`}
                 >
                   {listening ? "⏹️" : "🎤"}
                 </button>
