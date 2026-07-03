@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, useRef } from "react";
+import { jsPDF } from "jspdf";
 import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
@@ -2055,6 +2056,94 @@ function formatBotMessage(text) {
 const BOT_GREET =
   "नमस्ते! 🙏 I'm Asha AI, your health assistant. Ask me about symptoms, medicines, or general health tips!";
 
+// Strips markdown symbols (##, **, |, --- etc.) from a bot answer so it reads
+// cleanly as plain text inside the PDF, while keeping line breaks intact.
+function stripMarkdownForPdf(text) {
+  return text
+    .replace(/\|/g, "  ")                 // table pipes → spacing
+    .replace(/^-{3,}$/gm, "")             // horizontal rules
+    .replace(/^#{1,6}\s*/gm, "")          // headings
+    .replace(/\*\*(.*?)\*\*/g, "$1")      // bold
+    .replace(/\*(.*?)\*/g, "$1")          // italics
+    .replace(/`/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// Builds a printable PDF from the chat history — each patient question
+// paired with Asha AI's full instructions/medicine/caution response, so it
+// can be carried to a pharmacy or kept as a reference at home.
+function downloadChatAsPdf(messages) {
+  const qa = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].from === "user") {
+      const answer = messages[i + 1]?.from === "bot" ? messages[i + 1].text : null;
+      qa.push({ question: messages[i].text, answer });
+    }
+  }
+
+  if (qa.length === 0) return; // nothing asked yet — button should be disabled anyway
+
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth  = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin     = 40;
+  const maxWidth   = pageWidth - margin * 2;
+  let y = margin;
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  // Header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Asha AI — Health Advice Summary", margin, y);
+  y += 20;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Generated on ${new Date().toLocaleString()}`, margin, y);
+  doc.setTextColor(0);
+  y += 22;
+
+  qa.forEach(({ question, answer }, idx) => {
+    ensureSpace(40);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    const qLines = doc.splitTextToSize(`Q${idx + 1}. ${question}`, maxWidth);
+    ensureSpace(qLines.length * 14 + 10);
+    doc.text(qLines, margin, y);
+    y += qLines.length * 14 + 6;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    const answerText = answer ? stripMarkdownForPdf(answer) : "(No response received)";
+    const aLines = doc.splitTextToSize(answerText, maxWidth);
+    aLines.forEach((line) => {
+      ensureSpace(14);
+      doc.text(line, margin, y);
+      y += 14;
+    });
+    y += 14; // gap before next Q&A
+  });
+
+  ensureSpace(30);
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  const disclaimer = doc.splitTextToSize(
+    "This document is for reference only and does not replace professional medical advice. Always consult a qualified doctor before taking any medicine.",
+    maxWidth
+  );
+  doc.text(disclaimer, margin, y);
+
+  doc.save(`Asha-AI-Health-Advice-${Date.now()}.pdf`);
+}
+
 function ChatBot() {
   const [messages, setMessages] = useState([
     { from: "bot", text: BOT_GREET },
@@ -2180,11 +2269,24 @@ function ChatBot() {
   return (
     <div className="page-body">
       <div className="card card-ai">
-        <div className="card-header">
+        <div className="card-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div className="card-title">
             🤖 AI Health Assistant
             <span className="ai-badge">✨ AI Powered</span>
           </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => downloadChatAsPdf(messages)}
+            disabled={!messages.some((m) => m.from === "user")}
+            title="Download your questions and Asha AI's advice as a PDF — handy to carry to the pharmacy"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              opacity: messages.some((m) => m.from === "user") ? 1 : 0.5,
+            }}
+          >
+            ⬇️ Download PDF
+          </button>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <div className="chatbot-container" style={{ height: 520, border: "none" }}>
