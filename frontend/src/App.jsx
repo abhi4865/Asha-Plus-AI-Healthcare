@@ -1188,7 +1188,8 @@ function RegisterPatient({ onNav, toast, editPatient, onSave, onCancel, defaultV
     try {
       const Tesseract = await loadTesseract();
       const worker = await Tesseract.createWorker("eng", 1, { ...TESSERACT_CDN });
-      const { data } = await worker.recognize(ocrFile);
+      const processedFile = await preprocessImageForOCR(ocrFile);
+      const { data } = await worker.recognize(processedFile);
       await worker.terminate();
       const text = (data?.text || "").trim();
 
@@ -3082,6 +3083,78 @@ function loadTesseract() {
   return loadTesseract._promise;
 }
 
+// ── Image preprocessing before OCR ──────────────────────────────────────────
+// Camera photos come straight from the device sensor at full resolution and,
+// on many phones, carry an EXIF orientation tag that a plain canvas draw
+// ignores — so a portrait photo taken via capture="environment" can land in
+// Tesseract sideways or upside-down. That's the actual reason "Take Photo"
+// OCR has been so much worse than "Upload Document": gallery photos have
+// usually already been re-encoded (which bakes the rotation in), fresh camera
+// captures haven't. createImageBitmap's imageOrientation:"from-image" applies
+// that EXIF rotation for us before anything touches a canvas.
+//
+// We also upscale small/cropped shots (tiny printed text — like a medicine
+// pack's expiry line — needs a decent number of pixels per character to OCR
+// reliably) and convert to a contrast-stretched grayscale image, which helps
+// both slightly blurry camera shots and the low-contrast, often-reflective
+// print on blister foil and medicine boxes.
+async function preprocessImageForOCR(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch {
+      return file; // last resort: let Tesseract read the original file directly
+    }
+  }
+
+  const MIN_DIM = 1200; // upscale so small printed text stays legible
+  const MAX_DIM = 2400; // cap so huge camera photos don't stall OCR
+  let { width, height } = bitmap;
+  const longest = Math.max(width, height);
+  let scale = 1;
+  if (longest < MIN_DIM) scale = MIN_DIM / longest;
+  else if (longest > MAX_DIM) scale = MAX_DIM / longest;
+  width = Math.max(1, Math.round(width * scale));
+  height = Math.max(1, Math.round(height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+
+  try {
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const px = imgData.data;
+    let min = 255, max = 0;
+    const gray = new Uint8ClampedArray(width * height);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      const g = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      gray[j] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+    const range = Math.max(max - min, 1);
+    for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+      const stretched = ((gray[j] - min) / range) * 255;
+      px[i] = px[i + 1] = px[i + 2] = stretched;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } catch {
+    // getImageData can throw on a tainted/cross-origin canvas — extremely
+    // unlikely for a locally captured file, but fall back to the plain
+    // (oriented + resized) image rather than losing the OCR attempt entirely.
+  }
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob || file), "image/png");
+  });
+}
+
 // ── Expiry detection (Medicine Pack) — pure pattern matching, no AI call ────
 const MONTH_MAP = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
@@ -3107,29 +3180,84 @@ function buildExpiryResult(month, year, day) {
   return { dateLabel, status: daysRemaining >= 0 ? "Valid" : "Expired", daysRemaining };
 }
 
-function parseExpiryFromText(rawText) {
-  const text = rawText.toUpperCase().replace(/\s+/g, " ");
-  const keyword = "(?:EXP(?:IRY)?(?:\\.|\\s*DATE)?|USE\\s*BY|BEST\\s*BEFORE)\\s*[:.\\-]?\\s*";
+// Blister/foil packs frequently print the expiry date slightly above or below
+// the "EXP" label's baseline (a different text row, or a raised/embossed
+// batch-style font) rather than cleanly in line with it. OCR still reads both
+// as text, but the extra vertical offset means: (a) stray characters or extra
+// spaces can land between the keyword and the actual date, and (b) the small,
+// often shiny-foil digits get misread more than plain paragraph text (O/0,
+// I/1, S/5, B/8 confusion; single digits split apart by a phantom space).
+// tightenNumericNoise/fixConfusableDigits clean up exactly that noise, scoped
+// to a short window right after the keyword so we never touch unrelated text.
+function tightenNumericNoise(s) {
+  return s
+    .replace(/(\d)\s+(?=\d)/g, "$1")
+    .replace(/(\d)\s+([\/\-.])/g, "$1$2")
+    .replace(/([\/\-.])\s+(\d)/g, "$1$2");
+}
 
-  // Numeric forms: "EXP 06/2027", "EXPIRY: 25-06-2027"
-  // NOTE: the middle group tries \d{4} BEFORE \d{1,2}. Regex alternation tries
-  // left-to-right and stops at the first option that lets the match succeed —
-  // with \d{1,2} listed first, "2027" would match only its first 2 digits
-  // ("20"), which then got promoted via the year<100 rule below into 2020 —
-  // i.e. almost every real-world MM/YYYY expiry in the 2020s was silently
-  // misread as "2020", which is why every pack looked "Expired" the same way.
-  const numeric = text.match(new RegExp(keyword + "(\\d{1,2})[\\/\\-.](\\d{4}|\\d{1,2})(?:[\\/\\-.](\\d{2,4}))?"));
-  if (numeric) {
-    const result = numeric[3]
-      ? buildExpiryResult(parseInt(numeric[2], 10), parseInt(numeric[3], 10), parseInt(numeric[1], 10))
-      : buildExpiryResult(parseInt(numeric[1], 10), parseInt(numeric[2], 10), null);
+function fixConfusableDigits(s) {
+  return s
+    .replace(/[OQ]/g, "0")
+    .replace(/[IL|]/g, "1")
+    .replace(/S/g, "5")
+    .replace(/B/g, "8")
+    .replace(/Z/g, "2")
+    .replace(/G/g, "9");
+}
+
+function tryParseDateWindow(windowRaw) {
+  // Try the raw window first, then a noise-tightened version, then a version
+  // with common OCR digit misreads corrected — in that order, so we never
+  // "correct" a perfectly clean date into something wrong.
+  const numericCandidates = [
+    windowRaw,
+    tightenNumericNoise(windowRaw),
+    fixConfusableDigits(tightenNumericNoise(windowRaw)),
+  ];
+
+  for (const w of numericCandidates) {
+    // NOTE: the middle group tries \d{4} BEFORE \d{1,2}. Regex alternation
+    // tries left-to-right and stops at the first option that lets the match
+    // succeed — with \d{1,2} listed first, "2027" would match only its first
+    // 2 digits ("20"), which then got promoted via the year<100 rule below
+    // into 2020 — i.e. almost every real-world MM/YYYY expiry in the 2020s
+    // was silently misread as "2020", which is why every pack looked
+    // "Expired" the same way.
+    const numeric = w.match(/^\s*[:.\-]?\s*(\d{1,2})[\/\-.](\d{4}|\d{1,2})(?:[\/\-.](\d{2,4}))?/);
+    if (numeric) {
+      const result = numeric[3]
+        ? buildExpiryResult(parseInt(numeric[2], 10), parseInt(numeric[3], 10), parseInt(numeric[1], 10))
+        : buildExpiryResult(parseInt(numeric[1], 10), parseInt(numeric[2], 10), null);
+      if (result) return result;
+    }
+  }
+
+  // Textual-month forms: "EXP JUN 2027", "EXPIRY: JUN-27" — matched against
+  // the raw window since letters (not digits) carry the meaning here.
+  const textual = windowRaw.match(/^\s*[:.\-]?\s*([A-Z]{3,9})[\s\-.]?(\d{2,4})/);
+  if (textual && MONTH_MAP[textual[1].slice(0, 3)]) {
+    const result = buildExpiryResult(MONTH_MAP[textual[1].slice(0, 3)], parseInt(textual[2], 10), null);
     if (result) return result;
   }
 
-  // Textual-month forms: "EXP JUN 2027", "EXPIRY: JUN-27"
-  const textual = text.match(new RegExp(keyword + "([A-Z]{3,9})[\\s\\-.]?(\\d{2,4})"));
-  if (textual && MONTH_MAP[textual[1].slice(0, 3)]) {
-    const result = buildExpiryResult(MONTH_MAP[textual[1].slice(0, 3)], parseInt(textual[2], 10), null);
+  return null;
+}
+
+function parseExpiryFromText(rawText) {
+  const text = rawText.toUpperCase().replace(/\s+/g, " ");
+  const keywordRe = /EXP(?:IRY)?\.?(?:\s*DATE)?|USE\s*BY|BEST\s*BEFORE/g;
+
+  // Scan every occurrence of an expiry keyword, not just the first — packs
+  // often print "MFG ... EXP ..." and, if the label and date sit on slightly
+  // different lines/baselines, OCR can occasionally pick up a stray keyword-
+  // like fragment before the real one. Trying each occurrence in turn (widening
+  // the look-ahead window a bit past just the very next token) means one bad
+  // match doesn't stop us from finding the real date.
+  let match;
+  while ((match = keywordRe.exec(text)) !== null) {
+    const windowText = text.slice(match.index + match[0].length, match.index + match[0].length + 24);
+    const result = tryParseDateWindow(windowText);
     if (result) return result;
   }
 
@@ -3355,7 +3483,15 @@ function MedicalUploadCard({ meta, onBack, cache, setCache }) {
           if (m.status === "recognizing text") setOcrPct(Math.round(m.progress * 100));
         },
       });
-      const { data } = await worker.recognize(file);
+      // Medicine packs are mostly sparse, scattered printed lines (name, batch,
+      // MFG/EXP) rather than paragraph text, so the default automatic page
+      // segmentation sometimes misses or garbles the small expiry line —
+      // SPARSE_TEXT is tuned for exactly this "isolated lines of text" layout.
+      if (meta.key === "medicine") {
+        await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT });
+      }
+      const processedFile = await preprocessImageForOCR(file);
+      const { data } = await worker.recognize(processedFile);
       await worker.terminate();
       const text = (data?.text || "").trim();
       setOcrText(text);
