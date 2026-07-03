@@ -698,7 +698,75 @@ TONE & SAFETY RULES
 - Never recommend a specific dosage or say a medicine is "safe" without a prescription.
 - If the question is about a mental health crisis, emergency, or severe symptoms — skip the format and immediately say: "Please call emergency services or visit the nearest hospital right away."
 - Do not make up medicines or invent drug names. Only mention real, well-known generic medicines.
-- If a condition is too specific or rare to give general medicine info, skip the medicine section and explain why briefly.`;
+- If a condition is too specific or rare to give general medicine info, skip the medicine section and explain why briefly.
+
+════════════════════════════════════════
+SCOPE RESTRICTION — MANDATORY, NO EXCEPTIONS
+════════════════════════════════════════
+
+You ONLY answer questions about: physical health, mental health, diseases, symptoms, medicines, nutrition/diet (good/bad foods), yoga, exercise, hygiene, maternal & child health, first aid, and general wellness.
+
+If the user asks about ANYTHING else — movies, actors, celebrities, sports, politics, coding, homework, exams, general trivia, finance, gaming, astrology, etc. — do NOT answer it, even partially, and do NOT use the 4-section format. Reply with ONLY this line (in the user's language):
+
+"Sorry, Asha AI can only help with health, medicine, nutrition, yoga, and general wellness questions. Please ask something related to your health."
+
+Do not explain why, do not apologize further, do not add anything else.`;
+
+// =============================================================================
+//  SCOPE GUARD — keeps Asha AI restricted to health/medicine/wellness topics.
+//  Runs BEFORE the cache lookup and BEFORE any AI provider call, so an
+//  obviously off-topic prompt (movies, cricket, politics, etc.) never spends
+//  a single token or Firestore read. The system-prompt restriction above is
+//  the backstop for anything that slips past this filter.
+// =============================================================================
+
+const OFF_TOPIC_KEYWORDS = [
+  // entertainment
+  "movie", "film", "actor", "actress", "bollywood", "hollywood", "song lyrics",
+  "lyrics", "singer", "album", "netflix", "web series", "tv show", "celebrity",
+  // sports
+  "cricket", "football match", "ipl", "match score", "world cup", "olympics",
+  "kabaddi", "wwe", "fifa",
+  // politics / current affairs
+  "election", "politician", "prime minister", "president of", "parliament",
+  "political party", "bjp", "congress party",
+  // tech / coding / general knowledge / schoolwork
+  "programming", "javascript", "python code", "source code", "algorithm",
+  "homework", "exam question", "maths problem", "write an essay", "assignment",
+  // misc unrelated to health
+  "joke", "riddle", "horoscope", "astrology", "cryptocurrency", "bitcoin",
+  "stock market", "share price", "video game", "gaming pc",
+];
+
+const HEALTH_KEYWORDS = [
+  "pain", "fever", "cough", "cold", "medicine", "medicin", "tablet", "dose",
+  "doctor", "hospital", "disease", "diabetes", "bp", "blood pressure",
+  "pregnan", "vaccine", "injection", "symptom", "health", "diet", "food",
+  "nutrition", "yoga", "exercise", "workout", "mental health", "stress",
+  "anxiety", "depression", "sleep", "infection", "allergy", "injury", "wound",
+  "cancer", "heart", "lungs", "kidney", "liver", "stomach", "vomit",
+  "diarrhea", "headache", "weight loss", "obesity", "child health", "baby",
+  "delivery", "period", "menstru", "vitamin", "supplement", "surgery",
+  "therapy", "asha", "hygiene", "first aid", "बीमारी", "दवा", "स्वास्थ्य",
+  "बुखार", "दर्द", "योग", "आहार",
+];
+
+/** Cheap heuristic — no AI call needed. Returns true only when the prompt
+ *  looks off-topic AND has no health-related signal at all. */
+function isLikelyOffTopic(promptRaw) {
+  const p = promptRaw.toLowerCase();
+  const hasHealthSignal = HEALTH_KEYWORDS.some((kw) => p.includes(kw));
+  if (hasHealthSignal) return false; // let it through — has a health signal
+  return OFF_TOPIC_KEYWORDS.some((kw) => p.includes(kw));
+}
+
+/** Fixed refusal text, in the user's language, for prompts blocked by the guard. */
+function offTopicReply(promptRaw) {
+  const isHindi = /[\u0900-\u097F]/.test(promptRaw);
+  return isHindi
+    ? "क्षमा करें, Asha AI केवल स्वास्थ्य, दवाइयों, पोषण, योग और सामान्य स्वास्थ्य से जुड़े सवालों में मदद कर सकती है। कृपया कोई स्वास्थ्य से जुड़ा सवाल पूछें।"
+    : "Sorry, Asha AI can only help with health, medicine, nutrition, yoga, and general wellness questions. Please ask something related to your health.";
+}
 
 function normalizePrompt(rawPrompt) {
   const cleaned = rawPrompt.trim().toLowerCase();
@@ -803,6 +871,13 @@ app.post("/api/askHealthAssistant", async (req, res) => {
   const userPrompt = (req.body?.prompt || "").trim();
   if (!userPrompt) {
     return sendError(res, { code: 400, message: 'Please send a non-empty "prompt".' });
+  }
+
+  // ── Scope guard — reject obviously off-topic prompts (movies, cricket,
+  // politics, coding, etc.) BEFORE touching the cache or any AI provider,
+  // so no tokens are wasted on misuse. ───────────────────────────────────
+  if (isLikelyOffTopic(userPrompt)) {
+    return res.json({ response: offTopicReply(userPrompt), source: "guard" });
   }
 
   const cacheId  = normalizePrompt(userPrompt);
