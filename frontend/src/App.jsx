@@ -1903,6 +1903,15 @@ function formatBotMessage(text) {
     }
 
     // ── Numbered list item  1. … ─────────────────────────────────────────────
+    // NOTE: explicit "N." text markers are used here instead of a real
+    // <ol>/<li> (which would rely on the browser's automatic CSS counter /
+    // ::marker to draw the numbers). html2canvas — used by the "Download PDF"
+    // button below — does not render ::marker/list-style counters, so numbered
+    // steps rendered as a real <ol> would come out in the PDF with the numbers
+    // missing or misaligned even though they display fine in the on-screen
+    // chat. Writing the "1.", "2." … as plain text content instead means the
+    // exact same markup renders identically in both the chat window and the
+    // captured PDF.
     if (/^\d+\.\s/.test(line)) {
       const items = [];
       while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
@@ -1910,29 +1919,31 @@ function formatBotMessage(text) {
         i++;
       }
       elements.push(
-        <ol
-          key={`ol-${i}`}
-          style={{ margin: "4px 0 8px 0", paddingLeft: 22 }}
-        >
+        <div key={`ol-${i}`} style={{ margin: "4px 0 8px 0" }}>
           {items.map((item, idx) => (
-            <li
+            <div
               key={idx}
               style={{
+                display: "flex",
+                gap: 8,
                 marginBottom: 6,
                 fontSize: 13.5,
                 lineHeight: 1.6,
                 color: "#1F2937",
               }}
             >
-              {item}
-            </li>
+              <span style={{ fontWeight: 700, flexShrink: 0 }}>{idx + 1}.</span>
+              <span>{item}</span>
+            </div>
           ))}
-        </ol>
+        </div>
       );
       continue;
     }
 
     // ── Bullet list item  - … ────────────────────────────────────────────────
+    // Same html2canvas ::marker limitation as the numbered list above — use
+    // an explicit "•" text character instead of real <ul>/<li> bullets.
     if (line.startsWith("- ") || line.startsWith("• ")) {
       const items = [];
       while (
@@ -1943,24 +1954,24 @@ function formatBotMessage(text) {
         i++;
       }
       elements.push(
-        <ul
-          key={`ul-${i}`}
-          style={{ margin: "4px 0 8px 0", paddingLeft: 22 }}
-        >
+        <div key={`ul-${i}`} style={{ margin: "4px 0 8px 0" }}>
           {items.map((item, idx) => (
-            <li
+            <div
               key={idx}
               style={{
+                display: "flex",
+                gap: 8,
                 marginBottom: 5,
                 fontSize: 13.5,
                 lineHeight: 1.6,
                 color: "#1F2937",
               }}
             >
-              {item}
-            </li>
+              <span style={{ flexShrink: 0 }}>•</span>
+              <span>{item}</span>
+            </div>
           ))}
-        </ul>
+        </div>
       );
       continue;
     }
