@@ -2,6 +2,7 @@
   "dependencies": {
     "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
+    "html2pdf.js": "^0.14.0",
     "jspdf": "^4.2.1"
   }
 }
