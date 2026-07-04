@@ -2241,26 +2241,27 @@ function ChatBot() {
   return (
     <div className="page-body">
       {/* Hidden printable version of the chat, captured by html2pdf.js when
-          "Download PDF" is clicked. Rendered off-screen (not display:none —
-          html2canvas can't capture that) using the SAME formatBotMessage
-          renderer as the visible chat, so Hindi/Devanagari text is shaped
-          correctly by the browser exactly as it appears on screen.
+          "Download PDF" is clicked, using the SAME formatBotMessage renderer
+          as the visible chat so Hindi/Devanagari text is shaped correctly.
 
-          IMPORTANT: this is rendered through a portal straight into
-          document.body instead of inline here. If it stayed inside
-          .page-body / .card-ai, any ancestor with "overflow: hidden",
-          a CSS "transform", or a constrained height (all common in a
-          dashboard shell like this one) would silently clip or reposition
-          it, so html2canvas would capture nothing — which is exactly why
-          the previous off-screen-but-still-nested version kept producing
-          blank PDFs. As a direct child of <body> it can't be clipped or
-          repositioned by any app container. */}
+          IMPORTANT: html2pdf.js clones this element into its OWN internal
+          hidden overlay (it manages positioning entirely itself). It must
+          NOT already have position/left set on it — a clone that inherits
+          "position: fixed; left: -9999px" fights html2pdf.js's own overlay
+          positioning and gets rendered completely outside any capturable
+          area, producing a blank PDF (exactly what was happening). So the
+          actual print div below is left in normal, unpositioned flow, and
+          is hidden from users purely via this zero-size, overflow:hidden
+          OUTER wrapper — which is never part of the clone html2pdf.js
+          makes, since cloneNode only copies the source element downward,
+          not its ancestors. Rendered through a portal into document.body
+          so no dashboard ancestor (overflow/transform) can clip it either. */}
       {createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "hidden" }}>
         <div
           id="asha-pdf-content"
           ref={pdfContentRef}
           style={{
-            position: "fixed", top: 0, left: "-9999px",
             width: 650, background: "#ffffff", color: "#111827",
             padding: 28, fontFamily: "'Noto Sans', Arial, sans-serif",
           }}
@@ -2294,6 +2295,7 @@ function ChatBot() {
             This document is for reference only and does not replace professional medical advice.
             Always consult a qualified doctor before taking any medicine.
           </div>
+        </div>
         </div>,
         document.body
       )}
