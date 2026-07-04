@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, useRef } from "react";
+import { createPortal } from "react-dom";
 import html2pdf from "html2pdf.js";
 import {
   signInWithEmailAndPassword,
@@ -2083,7 +2084,29 @@ function downloadChatAsPdf(messages, containerEl) {
       margin: [32, 28, 32, 28],
       filename: `Asha-AI-Health-Advice-${Date.now()}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", scrollX: 0, scrollY: 0 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        scrollX: 0,
+        scrollY: 0,
+        // The printable div is deliberately pushed off-screen with
+        // "left: -9999px" so users never see it. But html2canvas renders
+        // a clone of the page inside an off-screen iframe that's only as
+        // wide as the current window — anything sitting at x = -9999 falls
+        // completely outside that render area, so the "screenshot" it takes
+        // is empty and html2pdf.js happily turns that blank image into a PDF.
+        // Fix: in the clone (and ONLY in the clone — the real on-screen DOM
+        // is untouched) snap the element back to (0, 0) so it's inside the
+        // rendered area right before the capture happens.
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById("asha-pdf-content");
+          if (el) {
+            el.style.left = "0px";
+            el.style.top = "0px";
+          }
+        },
+      },
       jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["avoid-all", "css", "legacy"] },
     })
@@ -2221,45 +2244,59 @@ function ChatBot() {
           "Download PDF" is clicked. Rendered off-screen (not display:none —
           html2canvas can't capture that) using the SAME formatBotMessage
           renderer as the visible chat, so Hindi/Devanagari text is shaped
-          correctly by the browser exactly as it appears on screen. */}
-      <div
-        ref={pdfContentRef}
-        style={{
-          position: "absolute", top: 0, left: "-9999px",
-          width: 650, background: "#ffffff", color: "#111827",
-          padding: 28, fontFamily: "'Noto Sans', Arial, sans-serif",
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>
-          Asha AI — Health Advice Summary
-        </div>
-        <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 18 }}>
-          Generated on {new Date().toLocaleString()}
-        </div>
-        {(() => {
-          const qa = [];
-          for (let i = 0; i < messages.length; i++) {
-            if (messages[i].from === "user") {
-              const answer = messages[i + 1]?.from === "bot" ? messages[i + 1].text : null;
-              qa.push({ question: messages[i].text, answer });
+          correctly by the browser exactly as it appears on screen.
+
+          IMPORTANT: this is rendered through a portal straight into
+          document.body instead of inline here. If it stayed inside
+          .page-body / .card-ai, any ancestor with "overflow: hidden",
+          a CSS "transform", or a constrained height (all common in a
+          dashboard shell like this one) would silently clip or reposition
+          it, so html2canvas would capture nothing — which is exactly why
+          the previous off-screen-but-still-nested version kept producing
+          blank PDFs. As a direct child of <body> it can't be clipped or
+          repositioned by any app container. */}
+      {createPortal(
+        <div
+          id="asha-pdf-content"
+          ref={pdfContentRef}
+          style={{
+            position: "fixed", top: 0, left: "-9999px",
+            width: 650, background: "#ffffff", color: "#111827",
+            padding: 28, fontFamily: "'Noto Sans', Arial, sans-serif",
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>
+            Asha AI — Health Advice Summary
+          </div>
+          <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 18 }}>
+            Generated on {new Date().toLocaleString()}
+          </div>
+          {(() => {
+            const qa = [];
+            for (let i = 0; i < messages.length; i++) {
+              if (messages[i].from === "user") {
+                const answer = messages[i + 1]?.from === "bot" ? messages[i + 1].text : null;
+                qa.push({ question: messages[i].text, answer });
+              }
             }
-          }
-          return qa.map(({ question, answer }, idx) => (
-            <div key={idx} style={{ marginBottom: 20, pageBreakInside: "avoid" }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8, lineHeight: 1.5 }}>
-                Q{idx + 1}. {question}
+            return qa.map(({ question, answer }, idx) => (
+              <div key={idx} style={{ marginBottom: 20, pageBreakInside: "avoid" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8, lineHeight: 1.5 }}>
+                  Q{idx + 1}. {question}
+                </div>
+                <div style={{ fontSize: 13 }}>
+                  {answer ? formatBotMessage(answer) : "(No response received)"}
+                </div>
               </div>
-              <div style={{ fontSize: 13 }}>
-                {answer ? formatBotMessage(answer) : "(No response received)"}
-              </div>
-            </div>
-          ));
-        })()}
-        <div style={{ fontSize: 10, color: "#9CA3AF", fontStyle: "italic", marginTop: 10, lineHeight: 1.5 }}>
-          This document is for reference only and does not replace professional medical advice.
-          Always consult a qualified doctor before taking any medicine.
-        </div>
-      </div>
+            ));
+          })()}
+          <div style={{ fontSize: 10, color: "#9CA3AF", fontStyle: "italic", marginTop: 10, lineHeight: 1.5 }}>
+            This document is for reference only and does not replace professional medical advice.
+            Always consult a qualified doctor before taking any medicine.
+          </div>
+        </div>,
+        document.body
+      )}
 
       <div className="card card-ai">
         <div className="card-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
