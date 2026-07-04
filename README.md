@@ -1,6 +1,4 @@
-<img src="./favicon.png" width="32" height="32" align="left" style="margin-right:8px" alt="ASHA+ logo"/>
-
-# ASHA+
+# 🏥 ASHA+
 
 A full-stack healthcare management platform built for **ASHA (Accredited Social Health Activist) workers** and **rural patients** in India. Asha Care digitizes patient registration, home-visit tracking, government health-scheme discovery, and gives users an AI-powered health assistant — all wrapped in a secure, role-based system for Super Admins, Admins, ASHA Workers, and Patients.
 
